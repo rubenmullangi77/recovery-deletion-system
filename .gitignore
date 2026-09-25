@@ -1,0 +1,50 @@
+# Build & Compilation Outputs
+build/
+build_*/
+bin/
+lib/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.d
+
+# CMake Artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.ninja
+.ninja_*
+compile_commands.json
+.cache/
+
+# Forensic Output & Working Artifacts
+recovered/
+reports/
+demo_workspace/
+scratch/
+scratch_*/
+*.img
+*.dd
+*.raw
+*.iso
+*.vmdk
+
+# Logs & Temporary Files
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# IDE & Editor Configurations
+.vscode/
