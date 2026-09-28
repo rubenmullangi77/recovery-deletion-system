@@ -3,6 +3,9 @@
 #include "file_dialog.hpp"
 #include "app_context.hpp"
 #include <forensivault/core/platform.hpp>
+#include "reporting/report_generator.hpp"
+#include "reporting/forensic_report.hpp"
+#include "logging/audit_logger.hpp"
 
 #include <imgui.h>
 #include <cstring>
@@ -478,8 +481,38 @@ void ViewFsRecovery::renderDirectoryRecovery() {
 
                 ImGui::TextColored(UITheme::COLOR_GREEN, "[OK] Recovered artifacts have been restored to: %s", dirOutputDirBuffer_);
                 
-                if (UITheme::renderSecondaryButton("Open Output Folder in File Explorer", ImVec2(280, 32))) {
+                if (UITheme::renderSecondaryButton("Open Output Folder in File Explorer", ImVec2(260, 32))) {
                     FileDialog::openFolderInExplorer(dirOutputDirBuffer_);
+                }
+
+                ImGui::SameLine();
+                if (UITheme::renderPrimaryButton("Generate PDF Forensic Report", ImVec2(240, 32))) {
+                    forensivault::reporting::ForensicReport rep;
+                    rep.report_id = "FS-REC-" + std::to_string(std::time(nullptr));
+                    rep.report_timestamp_iso = forensivault::logging::AuditLogger::currentTimestampIso();
+                    rep.case_info.case_id = "CASE-FS-RECOVERY";
+                    rep.case_info.case_name = "Filesystem Extraction Report";
+                    rep.case_info.investigator_name = AppContext::getInstance().currentUsername.empty() ? "Forensic Examiner" : AppContext::getInstance().currentUsername;
+                    rep.case_info.agency = "Digital Forensics Unit";
+                    rep.acquisition.source_path = targetDirBuffer_;
+                    rep.acquisition.total_bytes = recRes.recoveredBytes;
+                    for (const auto& it : dirScanResult_.items) {
+                        forensivault::reporting::ReportItem rItem;
+                        rItem.filename = it.filename;
+                        rItem.relative_path = it.originalPath;
+                        rItem.size_bytes = it.sizeBytes;
+                        rItem.file_type = it.extension;
+                        rItem.confidence_level = "VERIFIED";
+                        rep.recovered_items.push_back(rItem);
+                    }
+                    rep.audit_trail = forensivault::logging::AuditLogger::getInstance().getEntries();
+                    std::string reportsDir = forensivault::core::Platform::getReportsDirectory();
+                    auto res = forensivault::reporting::ReportGenerator::saveReportPackage(rep, reportsDir, true);
+                    if (res.pdf_saved) {
+                        AppContext::getInstance().postNotification(
+                            Notification::Type::SUCCESS, "PDF Forensic Report Saved",
+                            "Saved court-admissible PDF to: " + res.pdf_path);
+                    }
                 }
             } else {
                 UITheme::renderDangerBanner(recRes.errorMessage.c_str());

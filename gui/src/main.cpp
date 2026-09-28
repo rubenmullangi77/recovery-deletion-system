@@ -20,6 +20,7 @@
 #include "view_device_detector.hpp"
 #include "view_benchmark.hpp"
 #include "view_audit_log.hpp"
+#include "view_login.hpp"
 
 #include <iostream>
 #include <cstdio>
@@ -105,6 +106,7 @@ int main(int argc, char* argv[]) {
     forensivault::gui::ViewDiskInspect viewDiskInspect;
     forensivault::gui::ViewDeviceDetector viewDeviceDetector;
     forensivault::gui::ViewAuditLog viewAuditLog;
+    forensivault::gui::ViewLogin viewLogin;
 
     // Main loop
     while (!glfwWindowShouldClose(window)) {
@@ -213,6 +215,19 @@ int main(int argc, char* argv[]) {
             ImGui::SameLine(0.0f, 8.0f);
         }
 
+        // Render Examiner badge & Lock Station button if authenticated
+        if (appCtx.isAuthenticated) {
+            std::string userBadge = "Examiner: " + appCtx.currentUsername;
+            forensivault::gui::UITheme::renderBadge(userBadge.c_str(), forensivault::gui::UITheme::COLOR_GREEN);
+            ImGui::SameLine(0.0f, 8.0f);
+
+            if (forensivault::gui::UITheme::renderSecondaryButton("Lock Station", ImVec2(105.0f, 28.0f))) {
+                appCtx.logout();
+                viewLogin.resetFields();
+            }
+            ImGui::SameLine(0.0f, 8.0f);
+        }
+
         // Render Platform badge
         forensivault::gui::UITheme::renderBadge(platBadge.c_str(), forensivault::gui::UITheme::COLOR_BLUE);
         ImGui::SameLine(0.0f, 8.0f);
@@ -254,6 +269,26 @@ int main(int argc, char* argv[]) {
         // 2. Notifications Row
         // -------------------------------------------------------------
         appCtx.renderNotifications();
+
+        // -------------------------------------------------------------
+        // Authentication Gatekeeper (Blocks all views until login)
+        // -------------------------------------------------------------
+        if (!appCtx.isAuthenticated) {
+            viewLogin.render();
+            ImGui::End();
+
+            ImGui::Render();
+            int display_w, display_h;
+            glfwGetFramebufferSize(window, &display_w, &display_h);
+            glViewport(0, 0, display_w, display_h);
+            glClearColor(forensivault::gui::UITheme::COLOR_CREAM_BG.x,
+                         forensivault::gui::UITheme::COLOR_CREAM_BG.y,
+                         forensivault::gui::UITheme::COLOR_CREAM_BG.z, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            glfwSwapBuffers(window);
+            continue;
+        }
 
         // -------------------------------------------------------------
         // 3. Navigation Sidebar + Main Workspace View

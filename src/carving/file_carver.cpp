@@ -110,9 +110,16 @@ std::optional<CarvedFile> FileCarver::carveSingle(core::DiskImageReader& reader,
 
         std::string outPath = generateUniqueFilename(match.offset, file.extension, folderName);
         std::ofstream outFile(outPath, std::ios::binary | std::ios::trunc);
+        bool writeSuccess = false;
         if (outFile) {
             outFile.write(reinterpret_cast<const char*>(candidateBuffer.data()), candidateBuffer.size());
+            if (outFile.good()) {
+                writeSuccess = true;
+            }
             outFile.close();
+        }
+
+        if (writeSuccess) {
             file.recoveredFilePath = outPath;
 
             // Re-read physical output file directly from disk to compute authentic SHA-256
@@ -125,6 +132,9 @@ std::optional<CarvedFile> FileCarver::carveSingle(core::DiskImageReader& reader,
             }
         } else {
             file.sha256 = core::BinaryUtils::sha256(candidateBuffer);
+            file.isValid = false;
+            file.validationState = "EXPORT_FAILED";
+            file.warnings.push_back("Output disk export failed: Unable to write carved payload to " + outPath);
         }
     } else {
         file.sha256 = core::BinaryUtils::sha256(candidateBuffer);
@@ -166,11 +176,14 @@ CarvingSessionResult FileCarver::carve(core::DiskImageReader& reader,
             carved->id = fileIdCounter++;
             if (carved->isValid) {
                 session.validFilesCount++;
+                session.filesSuccessfullyCarved++;
                 lastCarvedEndOffset = std::max(lastCarvedEndOffset, carved->startOffset + carved->lengthBytes);
             } else {
                 session.partialFilesCount++;
+                if (carved->validationState != "EXPORT_FAILED") {
+                    session.filesSuccessfullyCarved++;
+                }
             }
-            session.filesSuccessfullyCarved++;
             session.carvedFiles.push_back(*carved);
         }
     }

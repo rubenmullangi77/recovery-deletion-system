@@ -171,9 +171,31 @@ bool isStdinAtty() {
 
 bool hasFzfInstalled() {
 #if defined(_WIN32)
-    return system("where fzf >nul 2>nul") == 0;
+    const char* pathEnv = getenv("PATH");
+    if (!pathEnv) return false;
+    std::string paths = pathEnv;
+    std::stringstream ss(paths);
+    std::string item;
+    while (std::getline(ss, item, ';')) {
+        if (!item.empty()) {
+            std::string p = item + "\\fzf.exe";
+            if (GetFileAttributesA(p.c_str()) != INVALID_FILE_ATTRIBUTES) return true;
+        }
+    }
+    return false;
 #else
-    return system("command -v fzf >/dev/null 2>&1") == 0;
+    const char* pathEnv = getenv("PATH");
+    if (!pathEnv) return false;
+    std::string paths = pathEnv;
+    std::stringstream ss(paths);
+    std::string item;
+    while (std::getline(ss, item, ':')) {
+        if (!item.empty()) {
+            std::string p = item + "/fzf";
+            if (::access(p.c_str(), X_OK) == 0) return true;
+        }
+    }
+    return false;
 #endif
 }
 
@@ -189,27 +211,25 @@ std::string selectPathFzf(const std::string& promptText, bool directoriesOnly = 
         return readLine("");
     }
 
+    for (char c : searchDir) {
+        if (c == '"' || c == '\'' || c == '$' || c == '`' || c == ';' || c == '&' || c == '|' || c == '\n' || c == '\r') {
+            forensivault::Logger::getInstance().print(promptText + " (enter path manually): ");
+            return readLine("");
+        }
+    }
+
     // FZF is the default: launch directly searching from user's home directory
     FV_PRINTLN(promptText);
     FV_PRINTLN("[*] Launching FZF file browser (searching from home: " + searchDir + ")...");
 
-    std::string cmd;
 #if defined(_WIN32)
+    std::string cmd;
     if (directoriesOnly) {
         cmd = "cd /d \"" + searchDir + "\" && dir /b /s /ad 2>nul | fzf --prompt=\"Select Directory > \"";
     } else {
         cmd = "cd /d \"" + searchDir + "\" && dir /b /s 2>nul | fzf --prompt=\"Select Target > \"";
     }
     FILE* pipe = _popen(cmd.c_str(), "r");
-#else
-    if (directoriesOnly) {
-        cmd = "find \"" + searchDir + "\" -maxdepth 5 -not -path '*/.*' -not -path '*/node_modules/*' -not -path '*/.cache/*' -type d 2>/dev/null | fzf --height 40% --reverse --border --prompt=\"Select Directory > \"";
-    } else {
-        cmd = "find \"" + searchDir + "\" -maxdepth 5 -not -path '*/.*' -not -path '*/node_modules/*' -not -path '*/.cache/*' 2>/dev/null | fzf --height 40% --reverse --border --prompt=\"Select Target > \"";
-    }
-    FILE* pipe = popen(cmd.c_str(), "r");
-#endif
-
     if (!pipe) {
         forensivault::Logger::getInstance().print("Enter path manually: ");
         return readLine("");
@@ -220,10 +240,102 @@ std::string selectPathFzf(const std::string& promptText, bool directoriesOnly = 
     if (fgets(buf, sizeof(buf), pipe) != nullptr) {
         result = buf;
     }
-#if defined(_WIN32)
     _pclose(pipe);
 #else
-    pclose(pipe);
+    int pipeFindToFzf[2];
+    int pipeFzfToParent[2];
+    if (pipe(pipeFindToFzf) != 0) {
+        forensivault::Logger::getInstance().print("Enter path manually: ");
+        return readLine("");
+    }
+    if (pipe(pipeFzfToParent) != 0) {
+        close(pipeFindToFzf[0]);
+        close(pipeFindToFzf[1]);
+        forensivault::Logger::getInstance().print("Enter path manually: ");
+        return readLine("");
+    }
+
+    pid_t pidFind = fork();
+    if (pidFind == 0) {
+        // Child 1: find
+        close(pipeFindToFzf[0]);
+        dup2(pipeFindToFzf[1], STDOUT_FILENO);
+        close(pipeFindToFzf[1]);
+        close(pipeFzfToParent[0]);
+        close(pipeFzfToParent[1]);
+
+        int devNull = open("/dev/null", O_WRONLY);
+        if (devNull >= 0) {
+            dup2(devNull, STDERR_FILENO);
+            close(devNull);
+        }
+
+        std::vector<const char*> findArgs;
+        findArgs.push_back("find");
+        findArgs.push_back(searchDir.c_str());
+        findArgs.push_back("-maxdepth");
+        findArgs.push_back("5");
+        findArgs.push_back("-not");
+        findArgs.push_back("-path");
+        findArgs.push_back("*/.*");
+        findArgs.push_back("-not");
+        findArgs.push_back("-path");
+        findArgs.push_back("*/node_modules/*");
+        findArgs.push_back("-not");
+        findArgs.push_back("-path");
+        findArgs.push_back("*/.cache/*");
+        if (directoriesOnly) {
+            findArgs.push_back("-type");
+            findArgs.push_back("d");
+        }
+        findArgs.push_back(nullptr);
+
+        execvp("find", const_cast<char* const*>(findArgs.data()));
+        _exit(127);
+    }
+
+    pid_t pidFzf = fork();
+    if (pidFzf == 0) {
+        // Child 2: fzf
+        close(pipeFindToFzf[1]);
+        dup2(pipeFindToFzf[0], STDIN_FILENO);
+        close(pipeFindToFzf[0]);
+
+        close(pipeFzfToParent[0]);
+        dup2(pipeFzfToParent[1], STDOUT_FILENO);
+        close(pipeFzfToParent[1]);
+
+        std::string promptArg = directoriesOnly ? "--prompt=Select Directory > " : "--prompt=Select Target > ";
+        std::vector<const char*> fzfArgs = {
+            "fzf",
+            "--height", "40%",
+            "--reverse",
+            "--border",
+            promptArg.c_str(),
+            nullptr
+        };
+
+        execvp("fzf", const_cast<char* const*>(fzfArgs.data()));
+        _exit(127);
+    }
+
+    // Parent
+    close(pipeFindToFzf[0]);
+    close(pipeFindToFzf[1]);
+    close(pipeFzfToParent[1]);
+
+    char buf[4096];
+    std::string result;
+    ssize_t n = read(pipeFzfToParent[0], buf, sizeof(buf) - 1);
+    if (n > 0) {
+        buf[n] = '\0';
+        result = buf;
+    }
+    close(pipeFzfToParent[0]);
+
+    int status = 0;
+    waitpid(pidFind, &status, 0);
+    waitpid(pidFzf, &status, 0);
 #endif
 
     result = trim(result);
@@ -1266,7 +1378,6 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        std::vector<uint8_t> imgBuffer = reader.readBytes(0, static_cast<size_t>(reader.size()));
         forensivault::carving::SignatureDatabase db;
         forensivault::carving::SignatureScanner scanner(db);
         auto matches = scanner.scan(reader);
@@ -1281,8 +1392,13 @@ int main(int argc, char* argv[]) {
                << " at Offset 0x" << std::hex << std::uppercase << match.offset << "]";
             FV_PRINTLN(ss.str());
 
-            size_t probeSize = std::min<size_t>(512, imgBuffer.size() - match.offset);
-            std::vector<uint8_t> fragData(imgBuffer.data() + match.offset, imgBuffer.data() + match.offset + probeSize);
+            size_t probeSize = 512;
+            if (match.offset + probeSize > reader.size()) {
+                probeSize = (match.offset < reader.size()) ? static_cast<size_t>(reader.size() - match.offset) : 0;
+            }
+            if (probeSize == 0) continue;
+
+            std::vector<uint8_t> fragData = reader.readBytes(match.offset, probeSize);
 
             forensivault::carving::FragmentCandidate headerFrag;
             headerFrag.fragmentId = match.offset;
@@ -1295,12 +1411,15 @@ int main(int argc, char* argv[]) {
             headerFrag.confidence = 50.0;
 
             uint64_t searchStart = match.offset + 512;
-            if (searchStart < imgBuffer.size()) {
+            if (searchStart < reader.size()) {
+                uint64_t maxSearchBytes = std::min<uint64_t>(reader.size() - searchStart, 32ULL * 1024 * 1024);
+                std::vector<uint8_t> searchBuffer = reader.readBytes(searchStart, static_cast<size_t>(maxSearchBytes));
+
                 auto orphans = forensivault::carving::FragmentReconstructor::findOrphanFragments(
                     match.signature->fileType,
-                    imgBuffer.data() + searchStart,
+                    searchBuffer.data(),
                     searchStart,
-                    imgBuffer.size() - searchStart,
+                    searchBuffer.size(),
                     512);
 
                 FV_PRINTLN("  Discovered " + std::to_string(orphans.size()) + " orphan cluster candidates.");
@@ -1474,6 +1593,35 @@ int main(int argc, char* argv[]) {
             return 0;
         } else {
             FV_PRINTERRLN("Failed to export audit journal to: " + args[1]);
+            return 1;
+        }
+    }
+
+    if (args[0] == "--report-pdf") {
+        std::string outPath;
+        if (args.size() >= 2) {
+            outPath = args[1];
+        } else {
+            outPath = (std::filesystem::path(forensivault::core::Platform::getReportsDirectory()) /
+                       ("forensic_report_" + std::to_string(std::time(nullptr)) + ".pdf")).string();
+        }
+        forensivault::reporting::ForensicReport rep;
+        rep.report_id = "CLI-REP-" + std::to_string(std::time(nullptr));
+        rep.report_timestamp_iso = forensivault::logging::AuditLogger::currentTimestampIso();
+        rep.case_info.case_id = "CASE-CLI-SESSION";
+        rep.case_info.case_name = "ForensiVault Forensic Session Report";
+        rep.case_info.investigator_name = "Forensic Examiner";
+        rep.case_info.agency = "Digital Forensics Laboratory";
+        rep.case_info.description = "Standalone automated forensic session documentation.";
+        rep.audit_trail = forensivault::logging::AuditLogger::getInstance().getEntries();
+        rep.audit_entries_count = rep.audit_trail.size();
+        rep.audit_chain_verified = forensivault::logging::AuditLogger::getInstance().verifyChain();
+
+        if (forensivault::reporting::ReportGenerator::generatePdfDirect(rep, outPath)) {
+            FV_PRINTLN("[SUCCESS] Forensic vector PDF generated: " + outPath);
+            return 0;
+        } else {
+            FV_PRINTERRLN("[ERROR] Failed to generate PDF report at: " + outPath);
             return 1;
         }
     }

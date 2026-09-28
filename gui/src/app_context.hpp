@@ -84,6 +84,14 @@ public:
     bool isDarkTheme = false;
     std::string platformName;
 
+    // Authentication & Session State
+    bool isAuthenticated = false;
+    std::string currentUsername;
+    std::string currentUserRole;
+    std::chrono::steady_clock::time_point authTimestamp;
+    void login(const std::string& username, const std::string& role);
+    void logout();
+
     void setDarkTheme(bool dark);
     void loadSettings();
     void saveSettings();

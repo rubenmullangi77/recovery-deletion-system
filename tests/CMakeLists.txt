@@ -13,6 +13,7 @@ add_executable(forensivault_tests
     test_audit_logging.cpp
     test_reporting.cpp
     test_directory_recovery.cpp
+    test_user_auth_db.cpp
 )
 
 

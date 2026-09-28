@@ -1,6 +1,8 @@
 #include "sanitization/secure_file_eraser.hpp"
 #include "sanitization/system_protection.hpp"
 #include "logging/audit_logger.hpp"
+#include "forensivault/core/platform.hpp"
+#include "forensivault/common/crypto_hash.hpp"
 #include <fstream>
 #include <filesystem>
 #include <random>
@@ -25,33 +27,6 @@ namespace fs = std::filesystem;
 namespace forensivault {
 namespace sanitization {
 
-namespace {
-
-void flushToDisk(std::fstream& fsFile, const std::string& filepath) {
-    fsFile.flush();
-#if defined(_WIN32)
-    HANDLE h = CreateFileA(filepath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h != INVALID_HANDLE_VALUE) {
-        FlushFileBuffers(h);
-        CloseHandle(h);
-    }
-#elif defined(__linux__)
-    int fd = ::open(filepath.c_str(), O_WRONLY);
-    if (fd >= 0) {
-        fdatasync(fd);
-        ::close(fd);
-    }
-#elif defined(__unix__) || defined(__APPLE__)
-    int fd = ::open(filepath.c_str(), O_WRONLY);
-    if (fd >= 0) {
-        fsync(fd);
-        ::close(fd);
-    }
-#endif
-}
-
-} // anonymous namespace
-
 int SecureFileEraser::getPassCount(SanitizationMethod method) {
     switch (method) {
         case SanitizationMethod::DOD_5220_22_M:
@@ -66,14 +41,20 @@ int SecureFileEraser::getPassCount(SanitizationMethod method) {
 
 std::string SecureFileEraser::generateRandomName(size_t length) {
     static const char charset[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    std::uniform_int_distribution<size_t> dist(0, sizeof(charset) - 2);
-
     std::string s;
-    s.reserve(length);
-    for (size_t i = 0; i < length; ++i) {
-        s += charset[dist(gen)];
+    s.resize(length);
+    std::vector<uint8_t> randBuf(length);
+    if (core::Platform::getRandomBytes(randBuf.data(), length)) {
+        for (size_t i = 0; i < length; ++i) {
+            s[i] = charset[randBuf[i] % (sizeof(charset) - 1)];
+        }
+    } else {
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_int_distribution<size_t> dist(0, sizeof(charset) - 2);
+        for (size_t i = 0; i < length; ++i) {
+            s[i] = charset[dist(gen)];
+        }
     }
     return s;
 }
@@ -88,16 +69,53 @@ bool SecureFileEraser::overwritePayload(
     const size_t chunkSize = 64 * 1024; // 64 KB sector-aligned chunk buffer
     std::vector<uint8_t> buffer(chunkSize);
 
-    std::random_device rd;
-    std::mt19937_64 rng(rd());
-
-    std::fstream file(filepath, std::ios::in | std::ios::out | std::ios::binary);
-    if (!file) {
+#if defined(_WIN32)
+    HANDLE hFile = CreateFileA(
+        filepath.c_str(),
+        GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ,
+        NULL,
+        OPEN_EXISTING,
+        FILE_FLAG_OPEN_REPARSE_POINT,
+        NULL
+    );
+    if (hFile == INVALID_HANDLE_VALUE) {
         return false;
     }
 
+    BY_HANDLE_FILE_INFORMATION bhfi{};
+    if (!GetFileInformationByHandle(hFile, &bhfi) ||
+        (bhfi.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+        (bhfi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+        CloseHandle(hFile);
+        return false;
+    }
+#else
+    // Open once with O_NOFOLLOW to block symlink redirection; verify descriptor is regular file
+    int fd = ::open(filepath.c_str(), O_RDWR | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) {
+        return false;
+    }
+
+    struct stat st{};
+    if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+        ::close(fd);
+        return false;
+    }
+#endif
+
     for (int pass = 1; pass <= totalPasses; ++pass) {
-        file.seekp(0, std::ios::beg);
+#if defined(_WIN32)
+        if (SetFilePointer(hFile, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+            CloseHandle(hFile);
+            return false;
+        }
+#else
+        if (::lseek(fd, 0, SEEK_SET) == (off_t)-1) {
+            ::close(fd);
+            return false;
+        }
+#endif
         uint64_t bytesWrittenThisPass = 0;
 
         // Determine pattern for this pass
@@ -118,25 +136,38 @@ bool SecureFileEraser::overwritePayload(
             size_t toWrite = static_cast<size_t>(std::min<uint64_t>(chunkSize, fileSize - bytesWrittenThisPass));
 
             if (isRandomPass) {
-                // Fill buffer with 64-bit random words
-                size_t words = toWrite / sizeof(uint64_t);
-                uint64_t* ptr = reinterpret_cast<uint64_t*>(buffer.data());
-                for (size_t w = 0; w < words; ++w) {
-                    ptr[w] = rng();
-                }
-                size_t rem = toWrite % sizeof(uint64_t);
-                if (rem > 0) {
-                    uint64_t lastWord = rng();
-                    std::memcpy(buffer.data() + words * sizeof(uint64_t), &lastWord, rem);
+                if (!core::Platform::getRandomBytes(buffer.data(), toWrite)) {
+#if defined(_WIN32)
+                    CloseHandle(hFile);
+#else
+                    ::close(fd);
+#endif
+                    return false;
                 }
             } else {
                 std::fill(buffer.begin(), buffer.begin() + toWrite, fixedByte);
             }
 
-            file.write(reinterpret_cast<const char*>(buffer.data()), toWrite);
-            if (!file) {
+#if defined(_WIN32)
+            DWORD written = 0;
+            if (!WriteFile(hFile, buffer.data(), static_cast<DWORD>(toWrite), &written, NULL) || written != toWrite) {
+                CloseHandle(hFile);
                 return false;
             }
+#else
+            size_t writtenTotal = 0;
+            while (writtenTotal < toWrite) {
+                ssize_t w = ::write(fd, buffer.data() + writtenTotal, toWrite - writtenTotal);
+                if (w > 0) {
+                    writtenTotal += static_cast<size_t>(w);
+                } else if (w < 0 && errno == EINTR) {
+                    continue;
+                } else {
+                    ::close(fd);
+                    return false;
+                }
+            }
+#endif
 
             bytesWrittenThisPass += toWrite;
 
@@ -156,10 +187,25 @@ bool SecureFileEraser::overwritePayload(
             }
         }
 
-        flushToDisk(file, filepath);
+        // Durable hardware cache flush directly on active handle; flush failure is fatal
+#if defined(_WIN32)
+        if (!FlushFileBuffers(hFile)) {
+            CloseHandle(hFile);
+            return false;
+        }
+#else
+        if (fdatasync(fd) != 0 && fsync(fd) != 0) {
+            ::close(fd);
+            return false;
+        }
+#endif
     }
 
-    file.close();
+#if defined(_WIN32)
+    CloseHandle(hFile);
+#else
+    ::close(fd);
+#endif
     return true;
 }
 
@@ -229,6 +275,17 @@ VerificationResult SecureFileEraser::eraseFile(
 
     // 3. Multi-pass overwrite
     if (fileSize > 0) {
+        std::string preWipeSampleHash;
+        {
+            std::ifstream preIfs(filepath, std::ios::binary);
+            if (preIfs) {
+                const size_t probeLen = static_cast<size_t>(std::min<uint64_t>(fileSize, 64 * 1024));
+                std::vector<uint8_t> pBuf(probeLen);
+                preIfs.read(reinterpret_cast<char*>(pBuf.data()), probeLen);
+                preWipeSampleHash = forensivault::CryptoHash::sha256(pBuf.data(), static_cast<size_t>(preIfs.gcount()));
+            }
+        }
+
         if (!overwritePayload(filepath, fileSize, method, callback)) {
             result.is_verified = false;
             result.details = "Overwrite failed: IO error writing sectors.";
@@ -238,7 +295,7 @@ VerificationResult SecureFileEraser::eraseFile(
         }
 
         // 4. Pre-unlink verification
-        result = verification::EraseVerification::verifyOverwrittenFile(filepath, method, fileSize);
+        result = verification::EraseVerification::verifyOverwrittenFile(filepath, method, fileSize, preWipeSampleHash);
         if (!result.is_verified) {
             logging::AuditLogger::getInstance().logEvent(
                 "VERIFICATION", filepath, getMethodDescription(method), "FAILED", result.details);

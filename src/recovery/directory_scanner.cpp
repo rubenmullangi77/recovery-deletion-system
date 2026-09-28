@@ -510,14 +510,16 @@ std::vector<ScannedDeletedItem> DirectoryScanner::scanSanitizedAuditRecords(cons
 
     // If in-memory audit log has no entries, try loading from default persistent journal
     if (entries.empty()) {
-        std::string homeDir = core::Platform::getUserHomeDirectory();
-        if (!homeDir.empty() && homeDir != ".") {
-            fs::path journalPath = fs::path(homeDir) / ".config" / "forensivault" / "audit_journal.jsonl";
-            std::error_code ec;
-            if (fs::exists(journalPath, ec)) {
-                logger.loadFromFile(journalPath.string());
-                entries = logger.getEntries();
-            }
+        fs::path configDir = core::Platform::getConfigDirectory();
+        fs::path textJournal = configDir / "audit_log.txt";
+        fs::path legacyJournal = configDir / "audit_journal.jsonl";
+        std::error_code ec;
+        if (fs::exists(textJournal, ec)) {
+            logger.loadFromFile(textJournal.string());
+            entries = logger.getEntries();
+        } else if (fs::exists(legacyJournal, ec)) {
+            logger.loadFromFile(legacyJournal.string());
+            entries = logger.getEntries();
         }
     }
 

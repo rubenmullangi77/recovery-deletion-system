@@ -212,9 +212,30 @@ EvidenceItem CaseManager::registerEvidence(const std::string& sourceImagePath,
     // Target evidence directory in case workspace
     fs::path targetEvidence = fs::path(evidenceDir()) / item.filename;
 
-    // If source is not already inside evidenceDir, copy or link it
+    // Transactional evidence ingestion:
+    // If source is not already inside evidenceDir, copy to temporary file and verify integrity
     if (fs::absolute(sourceImagePath) != fs::absolute(targetEvidence)) {
-        fs::copy_file(sourceImagePath, targetEvidence, fs::copy_options::overwrite_existing, ec);
+        fs::path tempPath = targetEvidence.string() + ".tmp";
+        fs::copy_file(sourceImagePath, tempPath, fs::copy_options::overwrite_existing, ec);
+        if (ec) {
+            fs::remove(tempPath, ec);
+            return item;
+        }
+
+        // Verify cryptographic hash of the copied temporary file against source
+        std::string copiedHash = computeFileSha256(tempPath.string());
+        if (copiedHash != item.sha256_hash) {
+            fs::remove(tempPath, ec);
+            return item;
+        }
+
+        // Atomic commit via rename
+        fs::rename(tempPath, targetEvidence, ec);
+        if (ec) {
+            fs::remove(tempPath, ec);
+            return item;
+        }
+
         item.filepath = targetEvidence.string();
     } else {
         item.filepath = sourceImagePath;
@@ -291,7 +312,16 @@ std::vector<logging::CustodyEvent> CaseManager::getCustodyHistory(const std::str
 }
 
 bool CaseManager::saveReport(const std::string& reportFilename, const std::string& reportContent) const {
-    fs::path repPath = fs::path(reportsDir()) / reportFilename;
+    fs::path inPath(reportFilename);
+    if (inPath.is_absolute() || reportFilename.find("..") != std::string::npos) {
+        return false;
+    }
+    fs::path cleanName = inPath.filename();
+    if (cleanName.empty() || cleanName == "." || cleanName == "..") {
+        return false;
+    }
+
+    fs::path repPath = fs::path(reportsDir()) / cleanName;
     std::ofstream ofs(repPath, std::ios::out | std::ios::trunc);
     if (!ofs) return false;
     ofs << reportContent;

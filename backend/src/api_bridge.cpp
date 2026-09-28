@@ -124,14 +124,10 @@ EraseResult FileEraserAPI::eraseFile(const std::string& filePath,
     }
 
     try {
-        std::string homeDir = core::Platform::getUserHomeDirectory();
-        if (!homeDir.empty() && homeDir != ".") {
-            fs::path configDir = fs::path(homeDir) / ".config" / "forensivault";
-            std::error_code secEc;
-            fs::create_directories(configDir, secEc);
-            fs::path journalPath = configDir / "audit_journal.jsonl";
-            logging::AuditLogger::getInstance().saveToFile(journalPath.string());
-        }
+        fs::path configDir = core::Platform::getConfigDirectory();
+        core::Platform::ensureConfigDirectories();
+        fs::path journalPath = configDir / "audit_log.txt";
+        logging::AuditLogger::getInstance().saveToFile(journalPath.string());
     } catch (...) {}
 
     return result;
@@ -188,14 +184,10 @@ EraseResult FileEraserAPI::eraseDirectory(const std::string& dirPath,
     }
 
     try {
-        std::string homeDir = core::Platform::getUserHomeDirectory();
-        if (!homeDir.empty() && homeDir != ".") {
-            fs::path configDir = fs::path(homeDir) / ".config" / "forensivault";
-            std::error_code secEc;
-            fs::create_directories(configDir, secEc);
-            fs::path journalPath = configDir / "audit_journal.jsonl";
-            logging::AuditLogger::getInstance().saveToFile(journalPath.string());
-        }
+        fs::path configDir = core::Platform::getConfigDirectory();
+        core::Platform::ensureConfigDirectories();
+        fs::path journalPath = configDir / "audit_log.txt";
+        logging::AuditLogger::getInstance().saveToFile(journalPath.string());
     } catch (...) {}
 
     return result;
@@ -257,6 +249,20 @@ DriveSanitizeResult DriveSanitizerAPI::sanitize(const std::string& targetPath,
 
     if (core::Platform::isRootOrSystemPath(targetPath) || core::Platform::isMainSystemDrive(targetPath)) {
         result.errorMessage = "Refusing to sanitize active OS root / system drive (" + targetPath + "). Protected even with root / admin privileges.";
+        return result;
+    }
+
+    bool isPhys = (targetPath.rfind("\\\\.\\", 0) == 0 || targetPath.rfind("/dev/", 0) == 0);
+    std::error_code ecFs;
+    if (!isPhys && std::filesystem::exists(targetPath, ecFs) &&
+        (std::filesystem::is_block_file(targetPath, ecFs) || std::filesystem::is_character_file(targetPath, ecFs))) {
+        isPhys = true;
+    }
+
+    if (isPhys) {
+        result.success = false;
+        result.verificationPassed = false;
+        result.errorMessage = "Physical drive direct sanitization is not supported in the software layer. ForensiVault supports virtual forensic disk images (.img, .raw) to ensure evidence immutability and prevent unintended hardware destruction.";
         return result;
     }
 

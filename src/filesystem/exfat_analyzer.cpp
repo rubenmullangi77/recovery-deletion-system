@@ -60,6 +60,10 @@ bool ExFATAnalyzer::probe(core::DiskImageReader& reader, uint64_t partitionStart
         return false;
     }
 
+    if (secPerClusShift > 16 || (bytesPerSecShift + secPerClusShift) > 25) { // 32MB max per specification
+        return false;
+    }
+
     uint32_t bytesPerSec = 1U << bytesPerSecShift;
     uint32_t secPerClus = 1U << secPerClusShift;
 
@@ -105,6 +109,21 @@ uint64_t ExFATAnalyzer::clusterToByteOffset(uint32_t cluster) const {
     return volume_info_.partition_offset_bytes + (sectorOffset * volume_info_.bytes_per_sector);
 }
 
+uint32_t ExFATAnalyzer::getNextCluster(core::DiskImageReader& reader, uint32_t cluster) const {
+    if (cluster < 2 || cluster >= (2 + cluster_count_)) {
+        return 0xFFFFFFFF;
+    }
+    uint64_t fatEntryOffset = volume_info_.allocation_table_offset + (static_cast<uint64_t>(cluster) * 4);
+    if (fatEntryOffset + 4 > reader.size()) {
+        return 0xFFFFFFFF;
+    }
+    uint8_t buf[4];
+    if (!reader.read(fatEntryOffset, buf, 4)) {
+        return 0xFFFFFFFF;
+    }
+    return readLE32(buf);
+}
+
 std::string ExFATAnalyzer::parseUtf16LE(const uint8_t* bytes, size_t numChars) const {
     std::string out;
     for (size_t i = 0; i < numChars; ++i) {
@@ -124,7 +143,13 @@ std::vector<FsFileRecord> ExFATAnalyzer::parseDirectoryCluster(core::DiskImageRe
     if (cluster < 2) return results;
 
     const uint64_t clusterBytes = volume_info_.cluster_size;
-    std::vector<uint8_t> clusterData(clusterBytes);
+    if (clusterBytes == 0 || clusterBytes > 32ULL * 1024 * 1024) return results;
+    std::vector<uint8_t> clusterData;
+    try {
+        clusterData.resize(static_cast<size_t>(clusterBytes));
+    } catch (...) {
+        return results;
+    }
 
     uint64_t offset = clusterToByteOffset(cluster);
     if (offset + clusterBytes > reader.size()) {
@@ -185,6 +210,8 @@ std::vector<FsFileRecord> ExFATAnalyzer::parseDirectoryCluster(core::DiskImageRe
             continue;
         }
 
+        uint8_t flags = streamEntry[1];
+        bool noFatChain = (flags & 0x02) != 0;
         uint8_t nameLength = streamEntry[3];
         uint32_t firstCluster = readLE32(&streamEntry[20]);
         uint64_t dataLength = readLE64(&streamEntry[24]);
@@ -224,9 +251,44 @@ std::vector<FsFileRecord> ExFATAnalyzer::parseDirectoryCluster(core::DiskImageRe
         if (firstCluster >= 2 && volume_info_.cluster_size > 0) {
             uint64_t numClusters = (dataLength + volume_info_.cluster_size - 1) / volume_info_.cluster_size;
             if (numClusters == 0 && dataLength > 0) numClusters = 1;
-            rec.cluster_runs.push_back({firstCluster, numClusters});
-            rec.fragment_count = 1;
-            rec.is_recoverable = true;
+
+            if (noFatChain) {
+                rec.cluster_runs.push_back({firstCluster, numClusters});
+                rec.fragment_count = 1;
+                rec.is_recoverable = true;
+            } else {
+                uint32_t curr = firstCluster;
+                uint64_t clustersFound = 0;
+                uint32_t runStart = curr;
+                uint64_t runLength = 0;
+                uint32_t loopGuard = 0;
+
+                while (curr >= 2 && curr < (2 + cluster_count_) && curr < 0xFFFFFFF8 &&
+                       clustersFound < numClusters && loopGuard++ < numClusters + 1000) {
+                    clustersFound++;
+                    if (runLength == 0) {
+                        runStart = curr;
+                        runLength = 1;
+                    } else if (curr == runStart + runLength) {
+                        runLength++;
+                    } else {
+                        rec.cluster_runs.push_back({runStart, runLength});
+                        runStart = curr;
+                        runLength = 1;
+                    }
+
+                    uint32_t next = getNextCluster(reader, curr);
+                    if (next < 2 || next >= 0xFFFFFFF7) {
+                        break;
+                    }
+                    curr = next;
+                }
+                if (runLength > 0) {
+                    rec.cluster_runs.push_back({runStart, runLength});
+                }
+                rec.fragment_count = rec.cluster_runs.size();
+                rec.is_recoverable = (clustersFound >= numClusters || isFileDeleted);
+            }
         } else if (dataLength > 0) {
             rec.is_recoverable = false;
             rec.unrecoverable_reason = "exFAT starting cluster unavailable or outside cluster heap.";
@@ -259,30 +321,67 @@ std::vector<uint8_t> ExFATAnalyzer::extractFile(const FsFileRecord& record, core
         return data;
     }
 
-    data.resize(record.file_size);
-    uint64_t bytesRemaining = record.file_size;
+    const uint64_t MAX_EXTRACT_BYTES = 100ULL * 1024 * 1024; // 100 MB max per single file
+    uint64_t toExtract = std::min(record.file_size, MAX_EXTRACT_BYTES);
+
+    try {
+        data.resize(static_cast<size_t>(toExtract));
+    } catch (const std::bad_alloc&) {
+        return {};
+    }
+
+    uint64_t bytesRemaining = toExtract;
     uint64_t bytesReadTotal = 0;
-    uint32_t currCluster = static_cast<uint32_t>(record.starting_cluster);
 
-    while (bytesRemaining > 0 && currCluster < (2 + cluster_count_)) {
-        uint64_t clusOffset = clusterToByteOffset(currCluster);
-        uint64_t toRead = std::min(bytesRemaining, volume_info_.cluster_size);
+    if (!record.cluster_runs.empty()) {
+        for (const auto& run : record.cluster_runs) {
+            if (bytesRemaining == 0) break;
+            for (uint64_t i = 0; i < run.cluster_count; ++i) {
+                if (bytesRemaining == 0) break;
+                uint32_t clus = static_cast<uint32_t>(run.start_cluster + i);
+                if (clus >= (2 + cluster_count_)) break;
 
-        if (clusOffset + toRead > reader.size()) {
-            if (clusOffset < reader.size()) {
-                toRead = reader.size() - clusOffset;
-            } else {
-                break;
+                uint64_t clusOffset = clusterToByteOffset(clus);
+                uint64_t toRead = std::min(bytesRemaining, volume_info_.cluster_size);
+
+                if (clusOffset + toRead > reader.size()) {
+                    if (clusOffset < reader.size()) {
+                        toRead = reader.size() - clusOffset;
+                    } else {
+                        break;
+                    }
+                }
+
+                if (!reader.read(clusOffset, data.data() + bytesReadTotal, toRead)) {
+                    break;
+                }
+
+                bytesReadTotal += toRead;
+                bytesRemaining -= toRead;
             }
         }
+    } else {
+        uint32_t currCluster = static_cast<uint32_t>(record.starting_cluster);
+        while (bytesRemaining > 0 && currCluster < (2 + cluster_count_)) {
+            uint64_t clusOffset = clusterToByteOffset(currCluster);
+            uint64_t toRead = std::min(bytesRemaining, volume_info_.cluster_size);
 
-        if (!reader.read(clusOffset, data.data() + bytesReadTotal, toRead)) {
-            break;
+            if (clusOffset + toRead > reader.size()) {
+                if (clusOffset < reader.size()) {
+                    toRead = reader.size() - clusOffset;
+                } else {
+                    break;
+                }
+            }
+
+            if (!reader.read(clusOffset, data.data() + bytesReadTotal, toRead)) {
+                break;
+            }
+
+            bytesReadTotal += toRead;
+            bytesRemaining -= toRead;
+            currCluster++;
         }
-
-        bytesReadTotal += toRead;
-        bytesRemaining -= toRead;
-        currCluster++; // For contiguous / NoFatChain files
     }
 
     data.resize(bytesReadTotal);

@@ -1,5 +1,7 @@
 #include "logging/audit_logger.hpp"
 #include "forensivault/common/crypto_hash.hpp"
+#include <forensivault/core/platform.hpp>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -238,6 +240,18 @@ AuditEntry AuditLogger::logForensicOperation(const AuditEntry& draftEntry) {
     last_hash_ = entry.entry_hash;
     entries_.push_back(entry);
 
+    // Auto-persist entry in real-time to ~/.config/forensicvault/audit_log.txt
+    try {
+        std::string defPath = getDefaultLogPath();
+        std::error_code ec;
+        std::filesystem::path p(defPath);
+        std::filesystem::create_directories(p.parent_path(), ec);
+        std::ofstream appendOfs(defPath, std::ios::out | std::ios::app);
+        if (appendOfs.is_open()) {
+            appendOfs << formatEntryAsText(entry) << "\n";
+        }
+    } catch (...) {}
+
     return entry;
 }
 
@@ -279,15 +293,74 @@ void AuditLogger::clear() {
     last_hash_ = GENESIS_HASH;
 }
 
-bool AuditLogger::saveToFile(const std::string& filepath) const {
+std::string AuditLogger::getDefaultLogPath() {
+    core::Platform::ensureConfigDirectories();
+    return (std::filesystem::path(core::Platform::getConfigDirectory()) / "audit_log.txt").string();
+}
+
+std::string AuditLogger::formatEntryAsText(const AuditEntry& e) {
+    std::ostringstream oss;
+    oss << "--------------------------------------------------------------------------------\n";
+    oss << "[FORENSIC AUDIT RECORD #" << e.entry_id << "]\n";
+    oss << "Timestamp (UTC):       " << e.timestamp_iso << "\n";
+    oss << "Operation Type:        " << e.operation_type << "\n";
+    oss << "Operator / Examiner:   " << (e.operator_name.empty() ? "System" : e.operator_name) << "\n";
+    oss << "Tool Version:          " << e.tool_version << "\n";
+    oss << "Execution Status:      " << e.status << "\n";
+    if (!e.case_id.empty())           oss << "Case ID:               " << e.case_id << "\n";
+    if (!e.evidence_id.empty())       oss << "Evidence ID:           " << e.evidence_id << "\n";
+    if (!e.source_identifier.empty()) oss << "Source Identifier:     " << e.source_identifier << "\n";
+    if (!e.source_sha256.empty())     oss << "Source SHA-256:        " << e.source_sha256 << "\n";
+    if (!e.method.empty())            oss << "Sanitization / Method: " << e.method << "\n";
+    if (!e.details.empty())           oss << "Details:               " << e.details << "\n";
+    if (!e.verification_results.empty()) oss << "Verification:          " << e.verification_results << "\n";
+    oss << "Chained Previous Hash: " << e.previous_hash << "\n";
+    oss << "SHA-256 Entry Hash:    " << e.entry_hash << "\n";
+    oss << "--------------------------------------------------------------------------------\n";
+    return oss.str();
+}
+
+bool AuditLogger::saveToTextFile(const std::string& filepath) const {
     std::lock_guard<std::mutex> lock(mutex_);
+    std::error_code ec;
+    std::filesystem::path p(filepath);
+    std::filesystem::create_directories(p.parent_path(), ec);
+
     std::ofstream ofs(filepath, std::ios::out | std::ios::trunc);
     if (!ofs) return false;
 
+    ofs << "================================================================================\n";
+    ofs << "FORENSIVAULT FORENSIC AUDIT JOURNAL (ISO/IEC 27040 COMPLIANT)\n";
+    ofs << "Cryptographically Chained SHA-256 Tamper-Evident Ledger\n";
+    ofs << "Total Logged Transactions: " << entries_.size() << "\n";
+    ofs << "================================================================================\n\n";
+
     for (const auto& e : entries_) {
-        ofs << e.toJson() << "\n";
+        ofs << formatEntryAsText(e) << "\n";
     }
     return ofs.good();
+}
+
+bool AuditLogger::saveToFile(const std::string& filepath) const {
+    if (filepath.length() >= 6 && filepath.substr(filepath.length() - 6) == ".jsonl") {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::ofstream ofs(filepath, std::ios::out | std::ios::trunc);
+        if (!ofs) return false;
+        for (const auto& e : entries_) {
+            ofs << e.toJson() << "\n";
+        }
+        return ofs.good();
+    }
+    if (filepath.length() >= 5 && filepath.substr(filepath.length() - 5) == ".json") {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::ofstream ofs(filepath, std::ios::out | std::ios::trunc);
+        if (!ofs) return false;
+        for (const auto& e : entries_) {
+            ofs << e.toJson() << "\n";
+        }
+        return ofs.good();
+    }
+    return saveToTextFile(filepath);
 }
 
 bool AuditLogger::loadFromFile(const std::string& filepath) {
@@ -296,6 +369,61 @@ bool AuditLogger::loadFromFile(const std::string& filepath) {
     if (!ifs) return false;
 
     std::vector<AuditEntry> loaded;
+    std::string firstLine;
+    while (std::getline(ifs, firstLine)) {
+        if (!firstLine.empty()) break;
+    }
+    if (firstLine.empty()) return true;
+
+    ifs.clear();
+    ifs.seekg(0, std::ios::beg);
+
+    bool isJson = (firstLine.find("{\"entry_id\"") != std::string::npos || firstLine[0] == '{');
+
+    if (!isJson) {
+        std::string line;
+        AuditEntry curr;
+        bool inEntry = false;
+        while (std::getline(ifs, line)) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            if (line.find("[FORENSIC AUDIT RECORD #") != std::string::npos) {
+                if (inEntry && !curr.entry_hash.empty()) {
+                    loaded.push_back(curr);
+                    curr = AuditEntry();
+                }
+                inEntry = true;
+                size_t numPos = line.find('#');
+                if (numPos != std::string::npos) {
+                    try { curr.entry_id = std::stoull(line.substr(numPos + 1)); } catch (...) {}
+                }
+                continue;
+            }
+            if (!inEntry) continue;
+            auto getVal = [&](const std::string& prefix) -> std::string {
+                if (line.rfind(prefix, 0) == 0) {
+                    return line.substr(prefix.length());
+                }
+                return "";
+            };
+            if (line.rfind("Timestamp (UTC):", 0) == 0) curr.timestamp_iso = getVal("Timestamp (UTC):       ");
+            else if (line.rfind("Operation Type:", 0) == 0) curr.operation_type = getVal("Operation Type:        ");
+            else if (line.rfind("Operator / Examiner:", 0) == 0) curr.operator_name = getVal("Operator / Examiner:   ");
+            else if (line.rfind("Tool Version:", 0) == 0) curr.tool_version = getVal("Tool Version:          ");
+            else if (line.rfind("Execution Status:", 0) == 0) curr.status = getVal("Execution Status:      ");
+            else if (line.rfind("Case ID:", 0) == 0) curr.case_id = getVal("Case ID:               ");
+            else if (line.rfind("Evidence ID:", 0) == 0) curr.evidence_id = getVal("Evidence ID:           ");
+            else if (line.rfind("Source Identifier:", 0) == 0) curr.source_identifier = getVal("Source Identifier:     ");
+            else if (line.rfind("Source SHA-256:", 0) == 0) curr.source_sha256 = getVal("Source SHA-256:        ");
+            else if (line.rfind("Sanitization / Method:", 0) == 0) curr.method = getVal("Sanitization / Method: ");
+            else if (line.rfind("Details:", 0) == 0) curr.details = getVal("Details:               ");
+            else if (line.rfind("Verification:", 0) == 0) curr.verification_results = getVal("Verification:          ");
+            else if (line.rfind("Chained Previous Hash:", 0) == 0) curr.previous_hash = getVal("Chained Previous Hash: ");
+            else if (line.rfind("SHA-256 Entry Hash:", 0) == 0) curr.entry_hash = getVal("SHA-256 Entry Hash:    ");
+        }
+        if (inEntry && !curr.entry_hash.empty()) {
+            loaded.push_back(curr);
+        }
+    } else {
     std::string line;
     while (std::getline(ifs, line)) {
         if (line.empty()) continue;
@@ -322,7 +450,11 @@ bool AuditLogger::loadFromFile(const std::string& filepath) {
             size_t start = pos + pattern.length();
             size_t end = line.find_first_of(",}", start);
             if (end == std::string::npos) return 0;
-            return std::stoull(line.substr(start, end - start));
+            try {
+                return std::stoull(line.substr(start, end - start));
+            } catch (...) {
+                return 0;
+            }
         };
 
         e.entry_id = extractNum("entry_id");
@@ -488,6 +620,16 @@ bool AuditLogger::loadFromFile(const std::string& filepath) {
         }
 
         loaded.push_back(e);
+    }
+    }
+
+    // Verify cryptographic hash chain across loaded entries before committing
+    std::string expectedPrev = GENESIS_HASH;
+    for (size_t i = 0; i < loaded.size(); ++i) {
+        if (loaded[i].previous_hash != expectedPrev || loaded[i].entry_hash != computeEntryHash(loaded[i])) {
+            return false; // Cryptographic chain broken or tampered
+        }
+        expectedPrev = loaded[i].entry_hash;
     }
 
     entries_ = loaded;

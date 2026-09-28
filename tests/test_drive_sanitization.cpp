@@ -6,6 +6,7 @@
 #include "sanitization/hdd_sanitizer.hpp"
 #include "sanitization/ssd_sanitizer.hpp"
 #include "sanitization/image_sanitizer.hpp"
+#include "forensivault/drive_sanitizer.hpp"
 #include "logging/audit_logger.hpp"
 #include "forensivault/common/crypto_hash.hpp"
 #include <fstream>
@@ -181,4 +182,17 @@ FV_TEST(DriveSanitization, EndToEndDod3PassImageSanitization) {
     ASSERT_TRUE(rep.measured_entropy > 7.0); // High entropy due to Pass 3 random bytes
 
     fs::remove(testPath);
+}
+
+FV_TEST(DriveSanitization, PublicApiPhysicalDriveSanitizationRejected) {
+    forensivault::api::DriveSanitizerAPI api;
+    auto res = api.sanitize("/dev/sda", forensivault::api::DriveSanitizeStandard::NIST_800_88_CLEAR);
+    ASSERT_FALSE(res.success);
+    ASSERT_FALSE(res.verificationPassed);
+    ASSERT_TRUE(res.errorMessage.find("Physical drive direct sanitization is not supported") != std::string::npos);
+
+    auto resWin = api.sanitize("\\\\.\\PhysicalDrive1", forensivault::api::DriveSanitizeStandard::NIST_800_88_CLEAR);
+    ASSERT_FALSE(resWin.success);
+    ASSERT_FALSE(resWin.verificationPassed);
+    ASSERT_TRUE(resWin.errorMessage.find("Physical drive direct sanitization is not supported") != std::string::npos);
 }

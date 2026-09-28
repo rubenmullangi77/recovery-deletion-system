@@ -59,6 +59,18 @@ public:
         uint8_t buffer[64];
         void transform(const uint8_t block[64]);
     };
+
+    // Standard RFC 2104 HMAC-SHA256 (hex-encoded)
+    static std::string hmacSha256(const std::string& key, const std::string& message);
+    static std::vector<uint8_t> hmacSha256Raw(const uint8_t* key, size_t keyLen,
+                                              const uint8_t* data, size_t dataLen);
+
+    // Standard RFC 2898 PBKDF2-HMAC-SHA256 key stretching (hex-encoded)
+    static std::string pbkdf2Sha256(const std::string& password, const std::string& salt,
+                                    uint32_t iterations = 100000, size_t keyLen = 32);
+
+    // Constant-time string equality check to mitigate timing side channels
+    static bool constantTimeEquals(const std::string& a, const std::string& b);
 };
 
 } // namespace forensivault

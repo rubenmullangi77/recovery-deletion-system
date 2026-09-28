@@ -36,18 +36,69 @@ bool isLinuxDeviceMountedAsRootOrBoot(const std::string& devName) {
     std::ifstream ifs("/proc/mounts");
     if (!ifs) return false;
     std::string line;
+    std::vector<std::string> criticalMountDevs;
+
     while (std::getline(ifs, line)) {
         std::istringstream iss(line);
         std::string dev, mountPoint;
         if (iss >> dev >> mountPoint) {
-            // Check if dev matches or contains devName, e.g. /dev/nvme0n1p2 contains nvme0n1
-            if (dev.find(devName) != std::string::npos) {
-                if (mountPoint == "/" || mountPoint == "/boot" || mountPoint == "/boot/efi" || mountPoint == "/etc") {
+            if (mountPoint == "/" || mountPoint == "/boot" || mountPoint == "/boot/efi" || mountPoint == "/etc") {
+                criticalMountDevs.push_back(dev);
+            }
+        }
+    }
+
+    for (const auto& dev : criticalMountDevs) {
+        // 1. Direct or partition match (e.g. /dev/nvme0n1p2 contains nvme0n1)
+        if (dev.find(devName) != std::string::npos) {
+            return true;
+        }
+
+        // 2. Canonical device path (e.g. /dev/mapper/fedora-root -> /dev/dm-0)
+        std::error_code ec;
+        fs::path canon = fs::canonical(dev, ec);
+        std::string dmName = canon.filename().string();
+        if (canon.string().find(devName) != std::string::npos) {
+            return true;
+        }
+
+        // 3. Sysfs slave resolution: check if /sys/block/<dmName>/slaves/ has any entry matching devName
+        fs::path slavesPath = fs::path("/sys/block") / dmName / "slaves";
+        if (fs::exists(slavesPath, ec) && fs::is_directory(slavesPath, ec)) {
+            for (const auto& slaveEntry : fs::directory_iterator(slavesPath, ec)) {
+                std::string sName = slaveEntry.path().filename().string();
+                if (sName.find(devName) != std::string::npos) {
                     return true;
                 }
             }
         }
     }
+
+    // 4. Reverse sysfs check: check if any partition under /sys/block/<devName> is held by a critical mount
+    std::error_code ec;
+    fs::path devBlockPath = fs::path("/sys/block") / devName;
+    if (fs::exists(devBlockPath, ec)) {
+        for (const auto& entry : fs::directory_iterator(devBlockPath, ec)) {
+            if (fs::is_directory(entry.path(), ec)) {
+                fs::path holdersPath = entry.path() / "holders";
+                if (fs::exists(holdersPath, ec)) {
+                    for (const auto& hEntry : fs::directory_iterator(holdersPath, ec)) {
+                        std::string hName = hEntry.path().filename().string();
+                        for (const auto& dev : criticalMountDevs) {
+                            if (dev.find(hName) != std::string::npos) {
+                                return true;
+                            }
+                            fs::path canon = fs::canonical(dev, ec);
+                            if (canon.filename().string() == hName) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     return false;
 }
 #endif
@@ -206,9 +257,11 @@ std::vector<DriveProperties> DriveDetector::detectPhysicalDevices() {
 
             // Root / System Drive Safety Check
             bool isRoot = isLinuxDeviceMountedAsRootOrBoot(name);
-            dev.is_safe_to_sanitize = !isRoot;
+            dev.is_safe_to_sanitize = false;
             if (isRoot) {
                 dev.hardware_limitations.push_back("CRITICAL SYSTEM PROTECTION: Device hosts active root ('/') or boot filesystem.");
+            } else {
+                dev.hardware_limitations.push_back("Physical storage device: direct sector overwrite blocked in software prototype.");
             }
             if (dev.media_type == DriveMediaType::SSD_NAND) {
                 dev.hardware_limitations.push_back("Flash Translation Layer (FTL) wear leveling may cause overprovisioned blocks to retain data.");
@@ -218,6 +271,23 @@ std::vector<DriveProperties> DriveDetector::detectPhysicalDevices() {
         }
     }
 #elif defined(_WIN32)
+    DWORD systemDiskNumber = 0xFFFFFFFF;
+    WCHAR sysDir[MAX_PATH] = { 0 };
+    if (GetSystemDirectoryW(sysDir, MAX_PATH) > 0 && sysDir[1] == L':') {
+        std::wstring volPath = L"\\\\.\\";
+        volPath += sysDir[0];
+        volPath += L":";
+        HANDLE hVol = CreateFileW(volPath.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+        if (hVol != INVALID_HANDLE_VALUE) {
+            STORAGE_DEVICE_NUMBER devNum = { 0 };
+            DWORD dwBytes = 0;
+            if (DeviceIoControl(hVol, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0, &devNum, sizeof(devNum), &dwBytes, NULL)) {
+                systemDiskNumber = devNum.DeviceNumber;
+            }
+            CloseHandle(hVol);
+        }
+    }
+
     for (uint32_t diskNum = 0; diskNum < 16; ++diskNum) {
         std::string diskPath = "\\\\.\\PhysicalDrive" + std::to_string(diskNum);
         std::wstring wDiskPath(diskPath.begin(), diskPath.end());
@@ -275,11 +345,12 @@ std::vector<DriveProperties> DriveDetector::detectPhysicalDevices() {
             }
         }
 
-        if (diskNum == 0) {
-            dev.is_safe_to_sanitize = false;
-            dev.hardware_limitations.push_back("CRITICAL SYSTEM PROTECTION: Primary system drive (PhysicalDrive0).");
+        bool isSystemDrive = (diskNum == systemDiskNumber) || (systemDiskNumber == 0xFFFFFFFF && diskNum == 0);
+        dev.is_safe_to_sanitize = false;
+        if (isSystemDrive) {
+            dev.hardware_limitations.push_back("CRITICAL SYSTEM PROTECTION: Active Windows system volume (PhysicalDrive" + std::to_string(diskNum) + ").");
         } else {
-            dev.is_safe_to_sanitize = true;
+            dev.hardware_limitations.push_back("Physical drive raw sanitization blocked: use virtual disk images for evidence integrity.");
         }
 
         dev.capabilities.push_back("Physical Storage Sector Overwrite Supported");

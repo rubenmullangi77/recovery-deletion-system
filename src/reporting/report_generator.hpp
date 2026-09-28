@@ -34,6 +34,12 @@ public:
     static bool generatePdf(const std::string& htmlPath, const std::string& pdfOutputPath);
 
     /**
+     * @brief Generates a native vector PDF 1.4 document directly from ForensicReport data.
+     *        Zero external dependencies (works on all Linux, Windows, macOS systems).
+     */
+    static bool generatePdfDirect(const ForensicReport& report, const std::string& pdfOutputPath);
+
+    /**
      * @brief Compiles and writes the complete forensic report package (JSON, HTML, and PDF).
      */
     static ReportPackageResult saveReportPackage(const ForensicReport& report,

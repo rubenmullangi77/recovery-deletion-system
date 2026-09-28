@@ -96,6 +96,7 @@ set(GUI_SOURCES
     src/view_device_detector.cpp
     src/view_benchmark.cpp
     src/view_audit_log.cpp
+    src/view_login.cpp
 )
 
 add_executable(forensivault_gui ${GUI_SOURCES})

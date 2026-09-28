@@ -29,6 +29,7 @@ private:
     core::DiskImageReader* current_reader_{nullptr};
 
     uint64_t clusterToByteOffset(uint32_t cluster) const;
+    uint32_t getNextCluster(core::DiskImageReader& reader, uint32_t cluster) const;
     std::vector<FsFileRecord> parseDirectoryCluster(core::DiskImageReader& reader, uint32_t cluster, bool lookForDeleted);
     std::string parseUtf16LE(const uint8_t* bytes, size_t numChars) const;
 };

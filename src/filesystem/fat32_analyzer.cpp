@@ -204,7 +204,13 @@ std::vector<FsFileRecord> FAT32Analyzer::parseDirectoryCluster(core::DiskImageRe
     if (cluster < 2) return results;
 
     const uint64_t clusterBytes = volume_info_.cluster_size;
-    std::vector<uint8_t> clusterData(clusterBytes);
+    if (clusterBytes == 0 || clusterBytes > 32ULL * 1024 * 1024) return results;
+    std::vector<uint8_t> clusterData;
+    try {
+        clusterData.resize(static_cast<size_t>(clusterBytes));
+    } catch (...) {
+        return results;
+    }
     std::vector<std::string> pendingLfnParts;
 
     uint32_t currClus = cluster;
@@ -354,7 +360,9 @@ std::vector<uint32_t> FAT32Analyzer::getClusterChain(core::DiskImageReader& read
 
     uint32_t curr = start_cluster;
     uint32_t loopGuard = 0;
-    const uint64_t maxClusters = (file_size + volume_info_.cluster_size - 1) / volume_info_.cluster_size + 1;
+    const uint64_t maxClusters = (volume_info_.cluster_size > 0)
+        ? ((file_size + volume_info_.cluster_size - 1) / volume_info_.cluster_size + 1)
+        : 100000;
 
     while (curr >= 2 && curr < 0x0FFFFFF8 && loopGuard++ < maxClusters && loopGuard < 100000) {
         chain.push_back(curr);
@@ -366,16 +374,6 @@ std::vector<uint32_t> FAT32Analyzer::getClusterChain(core::DiskImageReader& read
         curr = next;
     }
 
-    // If FAT table had 0 for deleted file, assume contiguous clusters up to file_size
-    if (chain.size() < maxClusters && volume_info_.cluster_size > 0) {
-        uint32_t needed = static_cast<uint32_t>((file_size + volume_info_.cluster_size - 1) / volume_info_.cluster_size);
-        if (needed == 0 && file_size > 0) needed = 1;
-        chain.clear();
-        for (uint32_t c = 0; c < needed; ++c) {
-            chain.push_back(start_cluster + c);
-        }
-    }
-
     return chain;
 }
 
@@ -385,10 +383,18 @@ std::vector<uint8_t> FAT32Analyzer::extractFile(const FsFileRecord& record, core
         return data;
     }
 
-    data.resize(record.file_size);
+    const uint64_t MAX_EXTRACT_BYTES = 100ULL * 1024 * 1024; // 100 MB max per single file
+    uint64_t toExtract = std::min(record.file_size, MAX_EXTRACT_BYTES);
+
+    try {
+        data.resize(static_cast<size_t>(toExtract));
+    } catch (const std::bad_alloc&) {
+        return {};
+    }
+
     auto clusters = getClusterChain(reader, static_cast<uint32_t>(record.starting_cluster), record.file_size);
 
-    uint64_t bytesRemaining = record.file_size;
+    uint64_t bytesRemaining = toExtract;
     uint64_t bytesReadTotal = 0;
 
     for (uint32_t clus : clusters) {

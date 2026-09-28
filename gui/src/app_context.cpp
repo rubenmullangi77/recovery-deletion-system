@@ -1,6 +1,7 @@
 #include "app_context.hpp"
 #include "ui_theme.hpp"
 #include <forensivault/core/platform.hpp>
+#include "logging/audit_logger.hpp"
 #include <imgui.h>
 #include <ctime>
 #include <iomanip>
@@ -78,8 +79,8 @@ AppContext& AppContext::getInstance() {
 }
 
 std::string AppContext::getSettingsFilePath() const {
-    std::string homeDir = forensivault::core::Platform::getUserHomeDirectory();
-    std::filesystem::path configDir = std::filesystem::path(homeDir) / ".config" / "forensivault";
+    forensivault::core::Platform::ensureConfigDirectories();
+    std::filesystem::path configDir = forensivault::core::Platform::getConfigDirectory();
     return (configDir / "settings.json").string();
 }
 
@@ -120,6 +121,7 @@ void AppContext::saveSettings() {
 }
 
 void AppContext::initialize() {
+    forensivault::core::Platform::ensureConfigDirectories();
     isElevated = forensivault::core::Platform::isElevated();
 #if defined(_WIN32)
     platformName = "Windows x64";
@@ -131,6 +133,29 @@ void AppContext::initialize() {
     currentOperation.reset();
     loadSettings();
     UITheme::applyTheme(isDarkTheme);
+}
+
+void AppContext::login(const std::string& username, const std::string& role) {
+    isAuthenticated = true;
+    currentUsername = username;
+    currentUserRole = role;
+    authTimestamp = std::chrono::steady_clock::now();
+    postNotification(Notification::Type::SUCCESS, "Session Authenticated",
+                     "Forensic Examiner " + username + " authenticated successfully.");
+}
+
+void AppContext::logout() {
+    if (isAuthenticated) {
+        forensivault::logging::AuditLogger::getInstance().logEvent(
+            "USER_LOGOUT", "SECURE_AUTH_VAULT", "SESSION_CONTROL", "SUCCESS",
+            "Examiner '" + currentUsername + "' locked/logged out of session.");
+    }
+    isAuthenticated = false;
+    currentUsername.clear();
+    currentUserRole.clear();
+    activeTab = ModuleTab::DASHBOARD;
+    postNotification(Notification::Type::INFO, "Session Locked",
+                     "Workstation locked. Please authenticate to continue.");
 }
 
 void AppContext::setDarkTheme(bool dark) {

@@ -2,10 +2,14 @@
 #include "ui_theme.hpp"
 #include "file_dialog.hpp"
 #include "app_context.hpp"
+#include "reporting/report_generator.hpp"
+#include "reporting/forensic_report.hpp"
+#include <forensivault/core/platform.hpp>
 
 #include <imgui.h>
 #include <iomanip>
 #include <sstream>
+#include <filesystem>
 
 namespace forensivault::gui {
 
@@ -51,28 +55,62 @@ void ViewAuditLog::render() {
             UITheme::renderBadge("TAMPER DETECTED [INVALID HASH]", UITheme::COLOR_RED);
         }
 
-        float exportBtnW = 220.0f;
-        float targetX = ImGui::GetWindowWidth() - exportBtnW - 24.0f;
+        float actionBtnsW = 350.0f;
+        float targetX = ImGui::GetWindowWidth() - actionBtnsW - 24.0f;
         if (targetX > ImGui::GetCursorPosX() + 16.0f) {
             ImGui::SameLine(targetX);
         } else {
             ImGui::Spacing();
         }
 
-        if (UITheme::renderPrimaryButton("Export Journal (.jsonl)...", ImVec2(exportBtnW, 34))) {
-            std::string savePath = FileDialog::saveFile("Export Forensic Audit Journal", "audit_log.jsonl", "JSON Lines (*.jsonl)", "*.jsonl;*.json;*.*");
+        if (UITheme::renderSecondaryButton("Export Log (.txt)...", ImVec2(160, 34))) {
+            std::string savePath = FileDialog::saveFile("Export Forensic Audit Log", "audit_log.txt", "Text Files (*.txt)", "*.txt;*.*");
             if (!savePath.empty()) {
-                if (forensivault::logging::AuditLogger::getInstance().saveToFile(savePath)) {
+                if (forensivault::logging::AuditLogger::getInstance().saveToTextFile(savePath)) {
                     AppContext::getInstance().postNotification(
                         Notification::Type::SUCCESS, "Audit Exported",
-                        "Saved chained audit journal to: " + savePath);
+                        "Saved plain-text audit ledger to: " + savePath);
                 } else {
                     AppContext::getInstance().postNotification(
                         Notification::Type::FAILURE, "Export Failed",
-                        "Could not write audit journal to: " + savePath);
+                        "Could not write audit ledger to: " + savePath);
                 }
             }
         }
+
+        ImGui::SameLine();
+
+        if (UITheme::renderPrimaryButton("Generate PDF Report", ImVec2(180, 34))) {
+            forensivault::reporting::ForensicReport rep;
+            rep.report_id = "AUDIT-" + std::to_string(std::time(nullptr));
+            rep.report_timestamp_iso = forensivault::logging::AuditLogger::currentTimestampIso();
+            rep.case_info.case_id = "CASE-AUDIT-LOG";
+            rep.case_info.case_name = "Forensic Workstation Audit Trail";
+            rep.case_info.investigator_name = AppContext::getInstance().currentUsername.empty() ? "Forensic Examiner" : AppContext::getInstance().currentUsername;
+            rep.case_info.agency = "Digital Forensics Unit";
+            rep.case_info.description = "Certified tamper-evident cryptographic audit report.";
+            rep.audit_trail = entries_;
+            rep.audit_entries_count = entries_.size();
+            rep.audit_chain_verified = forensivault::logging::AuditLogger::getInstance().verifyChain();
+
+            std::string reportsDir = forensivault::core::Platform::getReportsDirectory();
+            auto res = forensivault::reporting::ReportGenerator::saveReportPackage(rep, reportsDir, true);
+            if (res.pdf_saved) {
+                AppContext::getInstance().postNotification(
+                    Notification::Type::SUCCESS, "PDF Report Generated",
+                    "Saved court-admissible PDF to: " + res.pdf_path);
+            } else {
+                AppContext::getInstance().postNotification(
+                    Notification::Type::FAILURE, "PDF Generation Failed",
+                    "Could not generate PDF report.");
+            }
+        }
+
+        ImGui::Spacing();
+        std::string defPath = forensivault::logging::AuditLogger::getDefaultLogPath();
+        ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY, "Persistent Text Ledger: ");
+        ImGui::SameLine();
+        ImGui::TextColored(UITheme::COLOR_BLUE, "%s", defPath.c_str());
     }
     UITheme::endCard();
 

@@ -127,6 +127,14 @@ FV_TEST(AuditSystem, CryptographicChainAndTamperDetectionOnArtifactFields) {
     ASSERT_TRUE(reloaded.verifyChain());
     ASSERT_EQ(reloaded.getEntries().size(), 2);
 
+    // Tamper the file and verify loadFromFile rejects corrupted chain
+    {
+        std::ofstream tamperOfs(testLog, std::ios::app);
+        tamperOfs << "{\"entry_id\":3,\"entry_hash\":\"tampered_bad_hash\",\"previous_hash\":\"bad_prev_hash\"}\n";
+    }
+    AuditLogger tamperedReload;
+    ASSERT_FALSE(tamperedReload.loadFromFile(testLog));
+
     fs::remove(testLog);
 }
 
@@ -240,8 +248,10 @@ FV_TEST(RecoveryEngine, EndToEndAuditRecordGenerationAndEvidenceImmutability) {
     // 3. Verify that the audit logger has intact chain
     ASSERT_TRUE(AuditLogger::getInstance().verifyChain());
 
-    // 4. Save and verify formal forensic report in case reports/
+    // 4. Save and verify formal forensic report in case reports/ (with traversal rejection)
     std::string reportJson = "{\"case\":\"" + info.case_id + "\",\"status\":\"COMPLETED\"}";
+    ASSERT_FALSE(mgr.saveReport("../../../evil_escape.json", reportJson));
+    ASSERT_FALSE(mgr.saveReport("/tmp/evil_abs.json", reportJson));
     ASSERT_TRUE(mgr.saveReport("forensic_recovery_report.json", reportJson));
     ASSERT_TRUE(fs::exists(mgr.reportsDir() + "/forensic_recovery_report.json"));
 

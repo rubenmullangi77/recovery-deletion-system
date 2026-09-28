@@ -442,4 +442,124 @@ double CryptoHash::calculateEntropy(const ByteBuffer& buffer) {
     return calculateEntropy(buffer.data(), buffer.size());
 }
 
+// ---------------- HMAC-SHA256 & PBKDF2-HMAC-SHA256 ----------------
+
+namespace {
+
+std::vector<uint8_t> sha256BytesFromContext(CryptoHash::Sha256Context ctx) {
+    std::string hexStr = ctx.finalize();
+    std::vector<uint8_t> bytes(32);
+    for (size_t i = 0; i < 32; ++i) {
+        std::string byteHex = hexStr.substr(i * 2, 2);
+        bytes[i] = static_cast<uint8_t>(std::stoul(byteHex, nullptr, 16));
+    }
+    return bytes;
+}
+
+std::vector<uint8_t> sha256Raw(const uint8_t* data, size_t length) {
+    CryptoHash::Sha256Context ctx;
+    ctx.update(data, length);
+    return sha256BytesFromContext(ctx);
+}
+
+} // anonymous namespace
+
+std::vector<uint8_t> CryptoHash::hmacSha256Raw(const uint8_t* key, size_t keyLen,
+                                              const uint8_t* data, size_t dataLen) {
+    uint8_t kPad[64] = {0};
+    if (keyLen > 64) {
+        std::vector<uint8_t> hashedKey = sha256Raw(key, keyLen);
+        std::memcpy(kPad, hashedKey.data(), 32);
+    } else if (key && keyLen > 0) {
+        std::memcpy(kPad, key, keyLen);
+    }
+
+    uint8_t kIpad[64];
+    uint8_t kOpad[64];
+    for (size_t i = 0; i < 64; ++i) {
+        kIpad[i] = kPad[i] ^ 0x36;
+        kOpad[i] = kPad[i] ^ 0x5c;
+    }
+
+    // Inner hash: SHA-256(kIpad || data)
+    Sha256Context innerCtx;
+    innerCtx.update(kIpad, 64);
+    if (data && dataLen > 0) {
+        innerCtx.update(data, dataLen);
+    }
+    std::vector<uint8_t> innerHash = sha256BytesFromContext(innerCtx);
+
+    // Outer hash: SHA-256(kOpad || innerHash)
+    Sha256Context outerCtx;
+    outerCtx.update(kOpad, 64);
+    outerCtx.update(innerHash.data(), 32);
+    return sha256BytesFromContext(outerCtx);
+}
+
+std::string CryptoHash::hmacSha256(const std::string& key, const std::string& message) {
+    auto raw = hmacSha256Raw(reinterpret_cast<const uint8_t*>(key.data()), key.size(),
+                             reinterpret_cast<const uint8_t*>(message.data()), message.size());
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (uint8_t b : raw) {
+        oss << std::setw(2) << static_cast<int>(b);
+    }
+    return oss.str();
+}
+
+std::string CryptoHash::pbkdf2Sha256(const std::string& password, const std::string& salt,
+                                    uint32_t iterations, size_t keyLen) {
+    if (iterations == 0) iterations = 1;
+    if (keyLen == 0) keyLen = 32;
+
+    const uint8_t* pwdPtr = reinterpret_cast<const uint8_t*>(password.data());
+    size_t pwdLen = password.size();
+
+    std::vector<uint8_t> derivedKey;
+    derivedKey.reserve(keyLen);
+
+    uint32_t blockIdx = 1;
+    while (derivedKey.size() < keyLen) {
+        // Construct salt || INT_32_BE(blockIdx)
+        std::vector<uint8_t> saltBlock(salt.begin(), salt.end());
+        saltBlock.push_back(static_cast<uint8_t>((blockIdx >> 24) & 0xFF));
+        saltBlock.push_back(static_cast<uint8_t>((blockIdx >> 16) & 0xFF));
+        saltBlock.push_back(static_cast<uint8_t>((blockIdx >> 8) & 0xFF));
+        saltBlock.push_back(static_cast<uint8_t>(blockIdx & 0xFF));
+
+        std::vector<uint8_t> u = hmacSha256Raw(pwdPtr, pwdLen, saltBlock.data(), saltBlock.size());
+        std::vector<uint8_t> t = u;
+
+        for (uint32_t iter = 1; iter < iterations; ++iter) {
+            u = hmacSha256Raw(pwdPtr, pwdLen, u.data(), u.size());
+            for (size_t k = 0; k < 32; ++k) {
+                t[k] ^= u[k];
+            }
+        }
+
+        for (size_t k = 0; k < 32 && derivedKey.size() < keyLen; ++k) {
+            derivedKey.push_back(t[k]);
+        }
+        blockIdx++;
+    }
+
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (uint8_t b : derivedKey) {
+        oss << std::setw(2) << static_cast<int>(b);
+    }
+    return oss.str();
+}
+
+bool CryptoHash::constantTimeEquals(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    volatile uint8_t diff = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
+        diff |= static_cast<uint8_t>(a[i] ^ b[i]);
+    }
+    return diff == 0;
+}
+
 } // namespace forensivault

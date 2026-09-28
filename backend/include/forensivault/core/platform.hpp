@@ -58,7 +58,41 @@ public:
         }
         return elevated != 0;
 #elif defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-        return geteuid() == 0;
+        bool elevated = (geteuid() == 0);
+        if (elevated) {
+            const char* tok = std::getenv("FORENSIVAULT_ELEV_TOKEN");
+            if (tok && *tok) {
+                int fd = ::open(tok, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+                if (fd >= 0) ::close(fd);
+                unsetenv("FORENSIVAULT_ELEV_TOKEN");
+            }
+        }
+        return elevated;
+#else
+        return false;
+#endif
+    }
+
+    /**
+     * @brief Cryptographically secure random number generator backed by OS kernel CSPRNG.
+     *        Uses /dev/urandom with O_CLOEXEC on POSIX, BCryptGenRandom on Windows.
+     */
+    static inline bool getRandomBytes(uint8_t* buffer, size_t length) noexcept {
+        if (!buffer || length == 0) return true;
+#if defined(_WIN32)
+        return BCryptGenRandom(NULL, buffer, static_cast<ULONG>(length), BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+#elif defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+        int fd = ::open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+        if (fd < 0) return false;
+        size_t total = 0;
+        while (total < length) {
+            ssize_t n = ::read(fd, buffer + total, length - total);
+            if (n > 0) total += static_cast<size_t>(n);
+            else if (n < 0 && errno == EINTR) continue;
+            else { ::close(fd); return false; }
+        }
+        ::close(fd);
+        return true;
 #else
         return false;
 #endif
@@ -174,6 +208,73 @@ public:
     }
 
     /**
+     * @brief Resolves the user-level configuration directory for ForensiVault.
+     *        Linux/POSIX: $XDG_CONFIG_HOME/forensicvault or ~/.config/forensicvault
+     *        Windows: %APPDATA%\forensicvault
+     */
+    static inline std::string getConfigDirectory() {
+#if defined(_WIN32)
+        const char* appData = std::getenv("APPDATA");
+        if (appData && *appData) {
+            return std::string(appData) + "\\forensicvault";
+        }
+        return getUserHomeDirectory() + "\\AppData\\Roaming\\forensicvault";
+#else
+        const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
+        if (xdgConfig && *xdgConfig) {
+            return std::string(xdgConfig) + "/forensicvault";
+        }
+        return getUserHomeDirectory() + "/.config/forensicvault";
+#endif
+    }
+
+    /**
+     * @brief Resolves the forensic reports directory.
+     *        Linux/POSIX: ~/.config/forensicvault/reports
+     *        Windows: %APPDATA%\forensicvault\reports
+     */
+    static inline std::string getReportsDirectory() {
+#if defined(_WIN32)
+        return getConfigDirectory() + "\\reports";
+#else
+        return getConfigDirectory() + "/reports";
+#endif
+    }
+
+    /**
+     * @brief Ensures config and report directories exist with secure permissions.
+     *        Automatically migrates legacy misspelled forensivault directory if present.
+     */
+    static inline void ensureConfigDirectories() {
+        std::string cfg = getConfigDirectory();
+        std::string rep = getReportsDirectory();
+        std::error_code ec;
+
+#if !defined(_WIN32)
+        // Automatic migration from misspelled legacy .config/forensivault
+        std::string legacyCfg = getUserHomeDirectory() + "/.config/forensivault";
+        if (std::filesystem::exists(legacyCfg, ec) && !std::filesystem::exists(cfg, ec)) {
+            std::filesystem::create_directories(cfg, ec);
+            ::chmod(cfg.c_str(), 0700);
+            for (const auto& item : std::filesystem::directory_iterator(legacyCfg, ec)) {
+                std::filesystem::copy(item.path(), std::filesystem::path(cfg) / item.path().filename(),
+                                      std::filesystem::copy_options::skip_existing, ec);
+            }
+        }
+#endif
+
+        std::filesystem::create_directories(cfg, ec);
+#if !defined(_WIN32)
+        ::chmod(cfg.c_str(), 0700);
+#endif
+
+        std::filesystem::create_directories(rep, ec);
+#if !defined(_WIN32)
+        ::chmod(rep.c_str(), 0700);
+#endif
+    }
+
+    /**
      * @brief Dynamically resolves the absolute path of the currently running binary.
      *        Zero hardcoded paths.
      */
@@ -228,12 +329,12 @@ public:
 
         if (isGuiSession && hasPkexec) {
             // Forward desktop environment variables so GUI displays under root
-            std::string envStr = "env ";
+            std::vector<std::string> envVars;
             if (const char* d = std::getenv("DISPLAY")) {
-                envStr += "DISPLAY=\"" + std::string(d) + "\" ";
+                envVars.push_back(std::string("DISPLAY=") + d);
             }
             if (const char* wd = std::getenv("WAYLAND_DISPLAY")) {
-                envStr += "WAYLAND_DISPLAY=\"" + std::string(wd) + "\" ";
+                envVars.push_back(std::string("WAYLAND_DISPLAY=") + wd);
             }
             std::string xauthPath;
             if (const char* xa = std::getenv("XAUTHORITY")) {
@@ -245,32 +346,47 @@ public:
                 }
             }
             if (!xauthPath.empty()) {
-                envStr += "XAUTHORITY=\"" + xauthPath + "\" ";
+                envVars.push_back(std::string("XAUTHORITY=") + xauthPath);
             }
             if (const char* xrd = std::getenv("XDG_RUNTIME_DIR")) {
-                envStr += "XDG_RUNTIME_DIR=\"" + std::string(xrd) + "\" ";
+                envVars.push_back(std::string("XDG_RUNTIME_DIR=") + xrd);
             }
 
-            // Grant local root access to X11/Xwayland if xhost is present
-            system("xhost +si:localuser:root >/dev/null 2>&1");
-
-            // Unique handshake token path to detect successful elevation without races
-            std::string tokenPath = "/tmp/.forensivault_elev_" + std::to_string(getpid()) + "_" +
-                                    std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".ready";
+            // Secure per-user runtime directory for elevation handshake (mode 0700)
+            std::string runtimeDir;
+            if (const char* xrd = std::getenv("XDG_RUNTIME_DIR")) {
+                runtimeDir = xrd;
+            } else {
+                runtimeDir = getConfigDirectory();
+            }
+            std::filesystem::create_directories(runtimeDir);
+            std::string tokenPath = runtimeDir + "/.elev_" + std::to_string(getpid()) + ".ready";
             std::remove(tokenPath.c_str());
 
-            // Build root command script:
-            // 1. Mark handshake token as root so parent knows authorization succeeded
-            // 2. Exec elevated GUI application with environment
-            std::string script = "touch \"" + tokenPath + "\" && exec " + envStr + "\"" + exe + "\"";
-            for (const auto& a : extraArgs) {
-                script += " \"" + a + "\"";
+            envVars.push_back("FORENSIVAULT_ELEV_TOKEN=" + tokenPath);
+
+            // Construct direct argv array for pkexec: zero shell invocation, zero command string concatenation
+            std::vector<std::string> execArgs;
+            execArgs.push_back("pkexec");
+            execArgs.push_back("env");
+            for (const auto& ev : envVars) {
+                execArgs.push_back(ev);
             }
+            execArgs.push_back(exe);
+            for (const auto& a : extraArgs) {
+                execArgs.push_back(a);
+            }
+
+            std::vector<char*> cExecArgs;
+            for (auto& s : execArgs) {
+                cExecArgs.push_back(s.data());
+            }
+            cExecArgs.push_back(nullptr);
 
             pid_t pid = fork();
             if (pid == 0) {
-                // Child: Execute pkexec with single authentication prompt
-                execlp("pkexec", "pkexec", "sh", "-c", script.c_str(), (char*)nullptr);
+                // Child: Execute pkexec directly without /bin/sh
+                execvp("pkexec", cExecArgs.data());
                 _exit(127);
             } else if (pid > 0) {
                 // Parent: Monitor handshake token and child status

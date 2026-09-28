@@ -22,7 +22,8 @@ public:
     static sanitization::VerificationResult verifyOverwrittenFile(
         const std::string& filepath,
         sanitization::SanitizationMethod method,
-        uint64_t expectedSize);
+        uint64_t expectedSize,
+        const std::string& preWipeSampleHash = "");
 
     /**
      * @brief Checks post-deletion accessibility of the file on the filesystem.

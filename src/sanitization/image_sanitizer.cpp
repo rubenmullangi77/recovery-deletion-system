@@ -8,6 +8,16 @@
 #include <iomanip>
 #include <sstream>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace forensivault {
@@ -149,6 +159,40 @@ SanitizationReport ImageSanitizer::sanitizeImage(
         }
 
         file.flush();
+        if (!file.good()) {
+            file.close();
+            report.verified = false;
+            report.summary = "IO ERROR: Stream flush failed after pass " + std::to_string(pass);
+            return report;
+        }
+
+#if defined(_WIN32)
+        HANDLE hSync = CreateFileA(imagePath.c_str(), GENERIC_READ | GENERIC_WRITE,
+                                   FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+        if (hSync != INVALID_HANDLE_VALUE) {
+            if (!FlushFileBuffers(hSync)) {
+                CloseHandle(hSync);
+                file.close();
+                report.verified = false;
+                report.summary = "HARDWARE IO ERROR: FlushFileBuffers failed after pass " + std::to_string(pass);
+                return report;
+            }
+            CloseHandle(hSync);
+        }
+#else
+        int syncFd = ::open(imagePath.c_str(), O_RDWR | O_CLOEXEC);
+        if (syncFd >= 0) {
+            if (::fdatasync(syncFd) != 0) {
+                ::close(syncFd);
+                file.close();
+                report.verified = false;
+                report.summary = "HARDWARE IO ERROR: fdatasync failed after pass " + std::to_string(pass);
+                return report;
+            }
+            ::close(syncFd);
+        }
+#endif
+
         report.passes_completed++;
     }
     file.close();

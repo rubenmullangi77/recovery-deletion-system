@@ -116,12 +116,27 @@ public:
     void clear();
 
     /**
-     * @brief Exports the journal to JSON Lines format.
+     * @brief Exports the journal to JSON Lines format (or plain text if path ends with .txt).
      */
     bool saveToFile(const std::string& filepath) const;
 
     /**
-     * @brief Loads an audit log from disk and validates chain integrity.
+     * @brief Exports the journal to human-readable plain text format (.txt).
+     */
+    bool saveToTextFile(const std::string& filepath) const;
+
+    /**
+     * @brief Formats an entry into court-admissible human-readable plain text block.
+     */
+    static std::string formatEntryAsText(const AuditEntry& entry);
+
+    /**
+     * @brief Returns the default persistent audit log path: ~/.config/forensicvault/audit_log.txt.
+     */
+    static std::string getDefaultLogPath();
+
+    /**
+     * @brief Loads an audit log from disk (JSONL or .txt format) and validates chain integrity.
      */
     bool loadFromFile(const std::string& filepath);
 

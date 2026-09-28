@@ -8,6 +8,7 @@ add_library(forensivault_core STATIC
     ${CMAKE_SOURCE_DIR}/src/core/portable_device_detector.cpp
     ${CMAKE_SOURCE_DIR}/src/core/binary_utils.cpp
     ${CMAKE_SOURCE_DIR}/src/core/case_manager.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/user_auth_db.cpp
     ${CMAKE_SOURCE_DIR}/src/carving/file_signature.cpp
     ${CMAKE_SOURCE_DIR}/src/carving/format_validator.cpp
     ${CMAKE_SOURCE_DIR}/src/carving/signature_scanner.cpp

@@ -70,9 +70,19 @@ bool NTFSAnalyzer::probe(core::DiskImageReader& reader, uint64_t partitionStartS
 
     uint32_t recordSize = 1024;
     if (mftClustersPerRecord < 0) {
-        recordSize = 1U << (-mftClustersPerRecord);
+        int shiftVal = -static_cast<int>(mftClustersPerRecord);
+        if (shiftVal >= 9 && shiftVal <= 16) {
+            recordSize = 1U << shiftVal;
+        } else {
+            recordSize = 1024;
+        }
     } else if (mftClustersPerRecord > 0) {
-        recordSize = static_cast<uint32_t>(mftClustersPerRecord) * secPerClus * bytesPerSec;
+        uint64_t computed = static_cast<uint64_t>(mftClustersPerRecord) * secPerClus * bytesPerSec;
+        if (computed >= 512 && computed <= 65536) {
+            recordSize = static_cast<uint32_t>(computed);
+        } else {
+            recordSize = 1024;
+        }
     }
 
     volume_info_.fs_type = FsType::NTFS;
@@ -142,7 +152,7 @@ std::vector<ClusterRun> NTFSAnalyzer::parseRunlist(const uint8_t* runlistData, s
         uint8_t lenFieldSize = header & 0x0F;
         uint8_t offsetFieldSize = (header >> 4) & 0x0F;
 
-        if (lenFieldSize == 0 || idx + lenFieldSize + offsetFieldSize > maxLen) {
+        if (lenFieldSize == 0 || lenFieldSize > 8 || offsetFieldSize > 8 || idx + lenFieldSize + offsetFieldSize > maxLen) {
             break;
         }
 
