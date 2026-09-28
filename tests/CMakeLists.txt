@@ -14,6 +14,7 @@ add_executable(forensivault_tests
     test_reporting.cpp
     test_directory_recovery.cpp
     test_user_auth_db.cpp
+    test_safety_phase0.cpp
 )
 
 
@@ -28,3 +29,5 @@ target_link_libraries(forensivault_tests PRIVATE
 )
 
 target_compile_features(forensivault_tests PRIVATE cxx_std_17)
+add_test(NAME forensivault_tests COMMAND forensivault_tests)
+set_tests_properties(forensivault_tests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")

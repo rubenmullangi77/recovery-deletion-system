@@ -6,6 +6,13 @@
 #include <vector>
 #include <cstdint>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace forensivault {
 namespace sanitization {
 
@@ -30,15 +37,48 @@ public:
      */
     static int getPassCount(SanitizationMethod method);
 
+#if defined(_WIN32)
+    static bool secureUnlink(
+        HANDLE hFile,
+        const TargetIdentity& id,
+        const std::string& filepath);
+#else
+    static bool secureUnlink(
+        int fd,
+        const TargetIdentity& id,
+        const std::string& filepath);
+#endif
+
 private:
+#if defined(_WIN32)
     bool overwritePayload(
-        const std::string& filepath,
+        HANDLE hFile,
         uint64_t fileSize,
         SanitizationMethod method,
-        ProgressCallback callback);
+        ProgressCallback callback,
+        const std::string& filepath);
 
-    void shredMetadataAndUnlink(const std::string& filepath);
-    std::string generateRandomName(size_t length);
+    VerificationResult verifyHandle(
+        HANDLE hFile,
+        uint64_t expectedSize,
+        SanitizationMethod method,
+        const std::string& preWipeSampleHash,
+        const TargetIdentity& id);
+#else
+    bool overwritePayload(
+        int fd,
+        uint64_t fileSize,
+        SanitizationMethod method,
+        ProgressCallback callback,
+        const std::string& filepath);
+
+    VerificationResult verifyHandle(
+        int fd,
+        uint64_t expectedSize,
+        SanitizationMethod method,
+        const std::string& preWipeSampleHash,
+        const TargetIdentity& id);
+#endif
 };
 
 } // namespace sanitization

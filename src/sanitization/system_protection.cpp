@@ -164,12 +164,6 @@ bool SystemProtectionGuard::isProtected(const std::string& targetPath, std::stri
         }
     }
 
-    // Allow safe test delete folders
-    if (norm.find("\\FORENSIVAULT_TEST_DELETE") != std::string::npos ||
-        norm.find("\\TEST_DATA\\DISPOSABLE") != std::string::npos) {
-        return false;
-    }
-
     // Protect user AppData
     if (norm.find("\\APPDATA") != std::string::npos) {
         outReason = "Target is within the user AppData directory. Configuration erasure is strictly blocked.";
@@ -188,18 +182,17 @@ bool SystemProtectionGuard::isProtected(const std::string& targetPath, std::stri
         return true;
     }
 
-    // Protect application codebase directory unless inside allowed test folder
+    // Protect active ForensiVault application binary from self-destruction
     try {
-        std::string cwdNorm = normalizePath(fs::current_path().string());
-        if (!cwdNorm.empty() && (norm == cwdNorm || norm.rfind(cwdNorm + "\\", 0) == 0)) {
-            outReason = "Target is within the ForensiVault application directory. Codebase erasure is strictly blocked.";
-            return true;
+        std::string exePath = core::Platform::getExecutablePath();
+        if (!exePath.empty()) {
+            std::string exeNorm = normalizePath(exePath);
+            if (norm == exeNorm) {
+                outReason = "Target is the active ForensiVault application executable. Self-destruction is strictly blocked.";
+                return true;
+            }
         }
     } catch (...) {}
-    if (norm == "D:\\SIH" || norm.rfind("D:\\SIH\\", 0) == 0) {
-        outReason = "Target is within the ForensiVault application directory. Codebase erasure is strictly blocked.";
-        return true;
-    }
 
     return false;
 }

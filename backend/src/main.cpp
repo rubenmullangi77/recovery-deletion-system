@@ -761,22 +761,12 @@ void interactiveDriveSanitization() {
         return;
     }
 
-    // Privilege check with on-the-fly elevation
-    if (!forensivault::core::Platform::isElevated()) {
-        FV_PRINTLN("\n[ELEVATION REQUIRED] Physical storage device sanitization requires administrative / root privileges.");
-        forensivault::Logger::getInstance().print("Elevate privileges on the fly with sudo / admin credentials? [Y/n]: ");
-        std::string ans = readLine("");
-        if (ans.empty() || ans == "y" || ans == "Y" || ans == "yes") {
-            FV_PRINTLN("[*] Elevating to root / administrator on the fly...");
-            if (!forensivault::core::Platform::elevateProcess({"--option", "2"})) {
-                FV_PRINTERRLN("[ERROR] Elevation failed or was cancelled.");
-                return;
-            }
-            return;
-        } else {
-            FV_PRINTLN("[ABORTED] Elevation declined. Returning to main menu.");
-            return;
-        }
+    // Validate target model: physical block devices are rejected in the software layer
+    forensivault::sanitization::TargetType targetType = forensivault::sanitization::probeTargetType(target);
+    if (targetType == forensivault::sanitization::TargetType::PHYSICAL_BLOCK_DEVICE) {
+        FV_PRINTERRLN("\n[SAFETY BLOCK] Physical drive direct sanitization is not supported in the software layer.");
+        FV_PRINTLN("ForensiVault supports virtual forensic disk images (.img, .raw, .dd) to ensure evidence immutability and prevent unintended hardware destruction.");
+        return;
     }
 
     FV_PRINTLN("\nSelect Sanitization Standard:");
@@ -1015,18 +1005,7 @@ void interactiveDeviceDetection() {
     FV_PRINTLN("  STORAGE DEVICE DETECTION & HARDWARE INSPECTION            ");
     FV_PRINTLN("=============================================================");
 
-    if (!forensivault::core::Platform::isElevated()) {
-        FV_PRINTLN("[PERMISSION NOTICE] Current process is unprivileged. Low-level physical hardware access may be restricted.");
-        forensivault::Logger::getInstance().print("Elevate privileges on the fly with sudo / admin? [Y/n]: ");
-        std::string ans = readLine("");
-        if (ans.empty() || ans == "y" || ans == "Y" || ans == "yes") {
-            FV_PRINTLN("[*] Elevating to root / administrator on the fly...");
-            if (!forensivault::core::Platform::elevateProcess({"--option", "6"})) {
-                FV_PRINTERRLN("[ERROR] Elevation failed or was cancelled.");
-            }
-            return;
-        }
-    }
+    // Device detection enumerates partitions and sysfs entries unprivileged
 
     auto devices = forensivault::api::DriveSanitizerAPI::detectDevices();
     if (devices.empty()) {
@@ -1121,16 +1100,9 @@ void runInteractiveTerminal() {
         } else if (choice == "7") {
             interactiveBenchmark();
         } else if (choice == "e" || choice == "E") {
-            if (elevated) {
-                FV_PRINTLN("[INFO] Process is already running with elevated privileges.");
-            } else {
-                FV_PRINTLN("\n[*] Requesting elevated root / administrator privileges on the fly...");
-                if (!forensivault::core::Platform::elevateProcess({"--interactive"})) {
-                    FV_PRINTERRLN("[ERROR] Elevation failed or was cancelled.");
-                } else {
-                    return;
-                }
-            }
+            FV_PRINTLN("\n[POLICY NOTICE] Monolithic root/administrator elevation is disabled by security policy.");
+            FV_PRINTLN("ForensiVault operates strictly unprivileged. All recovery and disk image sanitization");
+            FV_PRINTLN("workflows execute within user workspace permissions to guarantee forensic isolation.");
         } else if (choice == "0" || choice == "exit" || choice == "quit") {
             FV_PRINTLN("\nExiting ForensiVault. Forensic custody maintained.");
             break;

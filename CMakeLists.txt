@@ -33,9 +33,10 @@ if(BUILD_GUI)
     add_subdirectory(gui)
 endif()
 
-# Unit tests (Disabled by default)
-option(BUILD_TESTING "Build automated unit test suite" OFF)
+# Unit tests
+include(CTest)
 if(BUILD_TESTING)
+    enable_testing()
     add_subdirectory(tests)
 endif()
 

@@ -58,16 +58,7 @@ public:
         }
         return elevated != 0;
 #elif defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-        bool elevated = (geteuid() == 0);
-        if (elevated) {
-            const char* tok = std::getenv("FORENSIVAULT_ELEV_TOKEN");
-            if (tok && *tok) {
-                int fd = ::open(tok, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
-                if (fd >= 0) ::close(fd);
-                unsetenv("FORENSIVAULT_ELEV_TOKEN");
-            }
-        }
-        return elevated;
+        return (geteuid() == 0);
 #else
         return false;
 #endif
@@ -314,182 +305,19 @@ public:
      *                  terminal sudo if running headless.
      *        On Windows: Invokes the native UAC elevation dialog via ShellExecuteExW(runas).
      */
-    static inline bool elevateProcess(const std::vector<std::string>& extraArgs = {}) {
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-        if (isElevated()) return true;
-        std::string exe = getExecutablePath();
-        if (exe.empty()) return false;
-
-        // Check if running in a graphical desktop environment
-        bool isGuiSession = (std::getenv("DISPLAY") != nullptr ||
-                             std::getenv("WAYLAND_DISPLAY") != nullptr ||
-                             std::getenv("XDG_CURRENT_DESKTOP") != nullptr);
-
-        bool hasPkexec = (system("command -v pkexec >/dev/null 2>&1") == 0);
-
-        if (isGuiSession && hasPkexec) {
-            // Forward desktop environment variables so GUI displays under root
-            std::vector<std::string> envVars;
-            if (const char* d = std::getenv("DISPLAY")) {
-                envVars.push_back(std::string("DISPLAY=") + d);
-            }
-            if (const char* wd = std::getenv("WAYLAND_DISPLAY")) {
-                envVars.push_back(std::string("WAYLAND_DISPLAY=") + wd);
-            }
-            std::string xauthPath;
-            if (const char* xa = std::getenv("XAUTHORITY")) {
-                xauthPath = xa;
-            } else {
-                std::string defaultXauth = getUserHomeDirectory() + "/.Xauthority";
-                if (std::filesystem::exists(defaultXauth)) {
-                    xauthPath = defaultXauth;
-                }
-            }
-            if (!xauthPath.empty()) {
-                envVars.push_back(std::string("XAUTHORITY=") + xauthPath);
-            }
-            if (const char* xrd = std::getenv("XDG_RUNTIME_DIR")) {
-                envVars.push_back(std::string("XDG_RUNTIME_DIR=") + xrd);
-            }
-
-            // Secure per-user runtime directory for elevation handshake (mode 0700)
-            std::string runtimeDir;
-            if (const char* xrd = std::getenv("XDG_RUNTIME_DIR")) {
-                runtimeDir = xrd;
-            } else {
-                runtimeDir = getConfigDirectory();
-            }
-            std::filesystem::create_directories(runtimeDir);
-            std::string tokenPath = runtimeDir + "/.elev_" + std::to_string(getpid()) + ".ready";
-            std::remove(tokenPath.c_str());
-
-            envVars.push_back("FORENSIVAULT_ELEV_TOKEN=" + tokenPath);
-
-            // Construct direct argv array for pkexec: zero shell invocation, zero command string concatenation
-            std::vector<std::string> execArgs;
-            execArgs.push_back("pkexec");
-            execArgs.push_back("env");
-            for (const auto& ev : envVars) {
-                execArgs.push_back(ev);
-            }
-            execArgs.push_back(exe);
-            for (const auto& a : extraArgs) {
-                execArgs.push_back(a);
-            }
-
-            std::vector<char*> cExecArgs;
-            for (auto& s : execArgs) {
-                cExecArgs.push_back(s.data());
-            }
-            cExecArgs.push_back(nullptr);
-
-            pid_t pid = fork();
-            if (pid == 0) {
-                // Child: Execute pkexec directly without /bin/sh
-                execvp("pkexec", cExecArgs.data());
-                _exit(127);
-            } else if (pid > 0) {
-                // Parent: Monitor handshake token and child status
-                bool elevatedStarted = false;
-                for (int i = 0; i < 600; ++i) { // Up to 60s for user password entry
-                    int status = 0;
-                    pid_t res = waitpid(pid, &status, WNOHANG);
-                    if (res > 0) {
-                        // Child exited (e.g. user canceled or command completed)
-                        if (std::filesystem::exists(tokenPath)) {
-                            elevatedStarted = true;
-                        }
-                        break;
-                    }
-
-                    // Check if elevated process initialized
-                    if (std::filesystem::exists(tokenPath)) {
-                        elevatedStarted = true;
-                        break;
-                    }
-
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
-
-                std::remove(tokenPath.c_str());
-
-                if (elevatedStarted) {
-                    // Give elevated instance a moment to initialize display before unprivileged parent exits
-                    std::this_thread::sleep_for(std::chrono::milliseconds(400));
-                    std::exit(0);
-                }
-
-                // If authorization was declined or canceled, return false so the UI stays alive!
-                return false;
-            }
-            return false;
-        }
-
-        // Headless / Terminal Fallback: Prompt user for sudo password interactively in the terminal
-        int auth = system("sudo -v");
-        if (auth != 0) {
-            return false;
-        }
-
-        std::vector<std::string> cmdArgs;
-        cmdArgs.push_back("sudo");
-        cmdArgs.push_back(exe);
-        for (const auto& a : extraArgs) {
-            cmdArgs.push_back(a);
-        }
-
-        std::vector<char*> cArgs;
-        for (auto& s : cmdArgs) {
-            cArgs.push_back(s.data());
-        }
-        cArgs.push_back(nullptr);
-
-        execvp("sudo", cArgs.data());
+    /**
+     * @brief Trust Boundary Policy for Privileged Operations:
+     *        ForensiVault core operates as an unprivileged process. Sanitization and recovery
+     *        operate strictly on user files and forensic disk images without elevated privileges.
+     *        Full-process monolithic elevation (running GUI / parser attack surface under EUID 0 / UAC)
+     *        is permanently prohibited to maintain forensic soundness and prevent privilege escalation.
+     *        Physical block device operations requiring kernel privileges must be delegated to a
+     *        dedicated helper with a strictly constrained IPC boundary, rather than elevating the GUI.
+     */
+    static inline bool elevateProcess(const std::vector<std::string>& /*extraArgs*/ = {}) {
+        // Monolithic full-process elevation is disabled by security policy.
+        // ForensicVault strictly operates with unprivileged least-privilege credentials.
         return false;
-#elif defined(_WIN32)
-        if (isElevated()) return true;
-        std::string exe = getExecutablePath();
-        if (exe.empty()) return false;
-
-        std::string params;
-        for (const auto& arg : extraArgs) {
-            if (!params.empty()) params += " ";
-            if (arg.find(' ') != std::string::npos && arg.front() != '\"') {
-                params += "\"" + arg + "\"";
-            } else {
-                params += arg;
-            }
-        }
-
-        int size_needed = MultiByteToWideChar(CP_UTF8, 0, exe.c_str(), -1, NULL, 0);
-        std::wstring wExe(size_needed, 0);
-        MultiByteToWideChar(CP_UTF8, 0, exe.c_str(), -1, &wExe[0], size_needed);
-
-        std::wstring wParams;
-        if (!params.empty()) {
-            int psize = MultiByteToWideChar(CP_UTF8, 0, params.c_str(), -1, NULL, 0);
-            wParams.resize(psize);
-            MultiByteToWideChar(CP_UTF8, 0, params.c_str(), -1, &wParams[0], psize);
-        }
-
-        SHELLEXECUTEINFOW sei = { sizeof(sei) };
-        sei.cbSize = sizeof(sei);
-        sei.fMask = SEE_MASK_NOASYNC;
-        sei.hwnd = GetForegroundWindow();
-        sei.lpVerb = L"runas";
-        sei.lpFile = wExe.c_str();
-        sei.lpParameters = wParams.empty() ? NULL : wParams.c_str();
-        sei.lpDirectory = NULL;
-        sei.nShow = SW_SHOWNORMAL;
-
-        if (ShellExecuteExW(&sei)) {
-            // User authorized UAC; exit unprivileged instance
-            std::exit(0);
-        }
-        return false;
-#else
-        return false;
-#endif
     }
 
     /**
@@ -520,78 +348,212 @@ public:
     }
 #endif
 
-    /**
-     * @brief Checks whether the specified path or device refers to the internal main storage drive
-     *        (the active physical drive or partition hosting the OS root / system installation).
-     *        Destructive drive sanitization and deletion MUST be permanently blocked for this drive,
-     *        even with root / administrator privileges.
-     */
-    static inline bool isMainSystemDrive(const std::filesystem::path& targetPath) {
-        std::string s = targetPath.lexically_normal().string();
-        if (s.empty()) return false;
-
 #if defined(__linux__)
-        std::string devName = targetPath.filename().string();
+    /**
+     * @brief Recursively resolves underlying block device topology for Linux storage devices.
+     *        Traverses /sys/class/block/<dev>/slaves and partition parent links to find all
+     *        base physical storage disks and intermediate device-mapper / partition layers.
+     */
+    static inline void resolveBlockDeviceSlaves(
+        const std::string& devName,
+        std::set<std::string>& outDisks,
+        const std::string& sysfsBlockDir = "/sys/class/block",
+        std::set<std::string>* visited = nullptr) {
 
-        std::ifstream ifs("/proc/mounts");
-        if (!ifs) return false;
+        std::set<std::string> localVisited;
+        if (!visited) {
+            visited = &localVisited;
+        }
 
-        std::set<std::string> rootBaseDisks;
-        std::set<std::string> rootPartitions;
+        namespace fs = std::filesystem;
+        std::error_code ec;
 
-        std::string line;
-        while (std::getline(ifs, line)) {
-            std::istringstream iss(line);
-            std::string mDev, mPoint;
-            if (iss >> mDev >> mPoint) {
-                if (mPoint == "/" || mPoint == "/boot" || mPoint == "/boot/efi" || mPoint == "/etc") {
-                    rootPartitions.insert(mDev);
-                    std::string partName = std::filesystem::path(mDev).filename().string();
-                    rootPartitions.insert(partName);
+        if (devName.empty()) return;
 
-                    // Find parent disk in sysfs: /sys/class/block/<partName>
-                    std::error_code ec;
-                    std::filesystem::path sysPath = "/sys/class/block/" + partName;
-                    if (std::filesystem::is_symlink(sysPath, ec)) {
-                        auto target = std::filesystem::read_symlink(sysPath, ec);
-                        if (!ec) {
-                            auto parentDir = target.parent_path().filename().string();
-                            if (!parentDir.empty()) {
-                                rootBaseDisks.insert(parentDir);
-                                rootBaseDisks.insert("/dev/" + parentDir);
-                            }
-                        }
-                    }
+        std::string name = devName;
+        // Strip /dev/mapper/ or /dev/ prefix if present
+        if (name.rfind("/dev/mapper/", 0) == 0) {
+            name = name.substr(12);
+        } else if (name.rfind("/dev/", 0) == 0) {
+            name = name.substr(5);
+        }
 
-                    // Fallback heuristics: nvme0n1p2 -> nvme0n1, sda2 -> sda
-                    if (partName.rfind("nvme", 0) == 0 || partName.rfind("mmcblk", 0) == 0) {
-                        size_t pPos = partName.rfind('p');
-                        if (pPos != std::string::npos && pPos > 0) {
-                            std::string base = partName.substr(0, pPos);
-                            rootBaseDisks.insert(base);
-                            rootBaseDisks.insert("/dev/" + base);
-                        }
-                    } else if (partName.rfind("sd", 0) == 0 || partName.rfind("vd", 0) == 0 || partName.rfind("hd", 0) == 0) {
-                        size_t numPos = partName.find_first_of("0123456789");
-                        if (numPos != std::string::npos && numPos > 0) {
-                            std::string base = partName.substr(0, numPos);
-                            rootBaseDisks.insert(base);
-                            rootBaseDisks.insert("/dev/" + base);
-                        }
+        if (name.empty()) return;
+
+        // Visited guard: ensure device name is only traversed once to prevent infinite loops on cyclic topologies
+        if (!visited->insert(name).second) {
+            return;
+        }
+
+        // Canonicalize if this is an actual filesystem node pointing to a device node (e.g. /dev/mapper/vg-root -> /dev/dm-0)
+        fs::path p("/dev/" + name);
+        if (fs::exists(p, ec) && fs::is_symlink(p, ec)) {
+            fs::path canon = fs::canonical(p, ec);
+            if (!ec) {
+                std::string cName = canon.filename().string();
+                if (!cName.empty() && cName != name) {
+                    outDisks.insert(cName);
+                    outDisks.insert("/dev/" + cName);
+                    if (visited->find(cName) == visited->end()) {
+                        resolveBlockDeviceSlaves(cName, outDisks, sysfsBlockDir, visited);
                     }
                 }
             }
         }
 
-        if (rootPartitions.count(s) || rootPartitions.count(devName)) {
-            return true;
+        outDisks.insert(name);
+        outDisks.insert("/dev/" + name);
+
+        fs::path sysPath = fs::path(sysfsBlockDir) / name;
+        if (!fs::exists(sysPath, ec)) {
+            // Check fallback heuristics for partitions
+            if (name.rfind("nvme", 0) == 0 || name.rfind("mmcblk", 0) == 0) {
+                size_t pPos = name.rfind('p');
+                if (pPos != std::string::npos && pPos > 0) {
+                    std::string base = name.substr(0, pPos);
+                    outDisks.insert(base);
+                    outDisks.insert("/dev/" + base);
+                    if (visited->find(base) == visited->end()) {
+                        resolveBlockDeviceSlaves(base, outDisks, sysfsBlockDir, visited);
+                    }
+                }
+            } else if (name.rfind("sd", 0) == 0 || name.rfind("vd", 0) == 0 ||
+                       name.rfind("hd", 0) == 0 || name.rfind("xvd", 0) == 0) {
+                size_t numPos = name.find_first_of("0123456789");
+                if (numPos != std::string::npos && numPos > 0) {
+                    std::string base = name.substr(0, numPos);
+                    outDisks.insert(base);
+                    outDisks.insert("/dev/" + base);
+                    if (visited->find(base) == visited->end()) {
+                        resolveBlockDeviceSlaves(base, outDisks, sysfsBlockDir, visited);
+                    }
+                }
+            }
+            return;
         }
-        if (rootBaseDisks.count(s) || rootBaseDisks.count(devName)) {
+
+        // 1. Recurse into 'slaves' directory (LVM, dm-crypt / LUKS, mdraid)
+        fs::path slavesDir = sysPath / "slaves";
+        if (fs::exists(slavesDir, ec) && fs::is_directory(slavesDir, ec)) {
+            for (const auto& entry : fs::directory_iterator(slavesDir, ec)) {
+                std::string slaveName = entry.path().filename().string();
+                if (!slaveName.empty() && slaveName != "." && slaveName != "..") {
+                    outDisks.insert(slaveName);
+                    outDisks.insert("/dev/" + slaveName);
+                    if (visited->find(slaveName) == visited->end()) {
+                        resolveBlockDeviceSlaves(slaveName, outDisks, sysfsBlockDir, visited);
+                    }
+                }
+            }
+        }
+
+        // 2. Resolve parent disk for partition nodes via sysfs symlink
+        if (fs::is_symlink(sysPath, ec)) {
+            fs::path target = fs::read_symlink(sysPath, ec);
+            if (!ec) {
+                std::string parentName = target.parent_path().filename().string();
+                if (!parentName.empty() && parentName != "block" && parentName != "." && parentName != name) {
+                    outDisks.insert(parentName);
+                    outDisks.insert("/dev/" + parentName);
+                    if (visited->find(parentName) == visited->end()) {
+                        resolveBlockDeviceSlaves(parentName, outDisks, sysfsBlockDir, visited);
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback partition heuristic
+        if (fs::exists(sysPath / "partition", ec)) {
+            if (name.rfind("nvme", 0) == 0 || name.rfind("mmcblk", 0) == 0) {
+                size_t pPos = name.rfind('p');
+                if (pPos != std::string::npos && pPos > 0) {
+                    std::string base = name.substr(0, pPos);
+                    outDisks.insert(base);
+                    outDisks.insert("/dev/" + base);
+                    if (visited->find(base) == visited->end()) {
+                        resolveBlockDeviceSlaves(base, outDisks, sysfsBlockDir, visited);
+                    }
+                }
+            } else if (name.rfind("sd", 0) == 0 || name.rfind("vd", 0) == 0 ||
+                       name.rfind("hd", 0) == 0 || name.rfind("xvd", 0) == 0) {
+                size_t numPos = name.find_first_of("0123456789");
+                if (numPos != std::string::npos && numPos > 0) {
+                    std::string base = name.substr(0, numPos);
+                    outDisks.insert(base);
+                    outDisks.insert("/dev/" + base);
+                    if (visited->find(base) == visited->end()) {
+                        resolveBlockDeviceSlaves(base, outDisks, sysfsBlockDir, visited);
+                    }
+                }
+            }
+        }
+    }
+#endif
+
+    /**
+     * @brief Checks whether the specified path or device refers to the internal main storage drive
+     *        (the active physical drive or partition hosting the OS root / system installation).
+     *        Destructive drive sanitization and deletion MUST be permanently blocked for this drive,
+     *        even with root / administrator privileges.
+     *        Fails closed (returns true) if system drive status cannot be reliably verified.
+     */
+    static inline bool isMainSystemDrive(
+        const std::filesystem::path& targetPath,
+        const std::string& mountsFilePath = "/proc/mounts",
+        const std::string& sysfsBlockDir = "/sys/class/block") {
+
+        std::string s = targetPath.lexically_normal().string();
+        if (s.empty()) return true; // Fail-closed on empty target
+
+#if defined(__linux__)
+        std::string devName = targetPath.filename().string();
+        std::error_code ec;
+
+        std::string canonDevName = devName;
+        if (targetPath.is_absolute() && std::filesystem::exists(targetPath, ec)) {
+            auto canon = std::filesystem::canonical(targetPath, ec);
+            if (!ec) {
+                canonDevName = canon.filename().string();
+            }
+        }
+
+        std::ifstream ifs(mountsFilePath);
+        if (!ifs) {
+            // FAIL-CLOSED: Cannot read mounts file, protect target by default
             return true;
         }
 
-        for (const auto& base : rootBaseDisks) {
-            if (s == base || devName == base) return true;
+        std::set<std::string> rootProtectedDisks;
+        std::string line;
+        bool foundRootMount = false;
+
+        while (std::getline(ifs, line)) {
+            std::istringstream iss(line);
+            std::string mDev, mPoint;
+            if (iss >> mDev >> mPoint) {
+                if (mPoint == "/" || mPoint == "/boot" || mPoint == "/boot/efi" || mPoint == "/etc" || mPoint == "/usr") {
+                    foundRootMount = true;
+                    rootProtectedDisks.insert(mDev);
+                    std::string pName = std::filesystem::path(mDev).filename().string();
+                    rootProtectedDisks.insert(pName);
+
+                    // Recursively resolve LVM, LUKS, partitions, and base physical disks
+                    resolveBlockDeviceSlaves(mDev, rootProtectedDisks, sysfsBlockDir);
+                }
+            }
+        }
+
+        // FAIL-CLOSED: If no root mount point could be resolved, fail closed
+        if (!foundRootMount) {
+            return true;
+        }
+
+        if (rootProtectedDisks.count(s) || rootProtectedDisks.count(devName) || rootProtectedDisks.count(canonDevName)) {
+            return true;
+        }
+
+        for (const auto& base : rootProtectedDisks) {
+            if (s == base || devName == base || canonDevName == base) return true;
             if (s.rfind(base + "p", 0) == 0 || s.rfind(base, 0) == 0) return true;
             if (s.rfind("/dev/" + base + "p", 0) == 0 || s.rfind("/dev/" + base, 0) == 0) return true;
         }
@@ -602,8 +564,8 @@ public:
         std::string lower = s;
         std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
 
-        char sysDriveLetter = 'c';
         wchar_t winDir[MAX_PATH];
+        char sysDriveLetter = 'c';
         if (GetWindowsDirectoryW(winDir, MAX_PATH) > 0 && winDir[1] == L':') {
             sysDriveLetter = static_cast<char>(std::tolower(winDir[0]));
         }
@@ -614,21 +576,40 @@ public:
             return true;
         }
 
+        // Query physical disk extents backing the system volume using IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS
         std::string sysDriveDevice = "\\\\.\\" + letterStr + ":";
         HANDLE hVol = CreateFileA(sysDriveDevice.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                   NULL, OPEN_EXISTING, 0, NULL);
         if (hVol != INVALID_HANDLE_VALUE) {
-            STORAGE_DEVICE_NUMBER sdn;
+            std::vector<uint8_t> extBuf(sizeof(VOLUME_DISK_EXTENTS) + 16 * sizeof(DISK_EXTENT));
             DWORD bytesRet = 0;
-            if (DeviceIoControl(hVol, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
-                                &sdn, sizeof(sdn), &bytesRet, NULL)) {
-                CloseHandle(hVol);
-                std::string physDrive = "\\\\.\\physicaldrive" + std::to_string(sdn.DeviceNumber);
-                if (lower == physDrive) {
-                    return true;
+            if (DeviceIoControl(hVol, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, NULL, 0,
+                                extBuf.data(), static_cast<DWORD>(extBuf.size()), &bytesRet, NULL)) {
+                auto* vde = reinterpret_cast<VOLUME_DISK_EXTENTS*>(extBuf.data());
+                for (DWORD i = 0; i < vde->NumberOfDiskExtents; ++i) {
+                    DWORD diskNum = vde->Extents[i].DiskNumber;
+                    std::string physDrive = "\\\\.\\physicaldrive" + std::to_string(diskNum);
+                    if (lower == physDrive) {
+                        CloseHandle(hVol);
+                        return true;
+                    }
                 }
             } else {
-                CloseHandle(hVol);
+                STORAGE_DEVICE_NUMBER sdn{};
+                if (DeviceIoControl(hVol, IOCTL_STORAGE_GET_DEVICE_NUMBER, NULL, 0,
+                                    &sdn, sizeof(sdn), &bytesRet, NULL)) {
+                    std::string physDrive = "\\\\.\\physicaldrive" + std::to_string(sdn.DeviceNumber);
+                    if (lower == physDrive) {
+                        CloseHandle(hVol);
+                        return true;
+                    }
+                }
+            }
+            CloseHandle(hVol);
+        } else {
+            // FAIL-CLOSED on Windows: If volume handle cannot be queried and target is physical drive, protect physicaldrive0
+            if (lower.rfind("\\\\.\\physicaldrive", 0) == 0 && sysDriveLetter == 'c') {
+                return true;
             }
         }
 
@@ -638,7 +619,7 @@ public:
 
         return false;
 #else
-        return false;
+        return true; // Fail-closed on unsupported platforms
 #endif
     }
 
