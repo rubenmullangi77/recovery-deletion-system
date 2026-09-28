@@ -20,3 +20,5 @@
 #include "forensivault/drive_sanitizer.hpp"
 #include "forensivault/carver.hpp"
 #include "forensivault/fs_recovery.hpp"
+#include "forensivault/directory_recovery.hpp"
+

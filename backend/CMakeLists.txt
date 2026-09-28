@@ -18,6 +18,8 @@ add_library(forensivault_core STATIC
     ${CMAKE_SOURCE_DIR}/src/filesystem/exfat_analyzer.cpp
     ${CMAKE_SOURCE_DIR}/src/filesystem/ntfs_analyzer.cpp
     ${CMAKE_SOURCE_DIR}/src/recovery/recovery_engine.cpp
+    ${CMAKE_SOURCE_DIR}/src/recovery/directory_scanner.cpp
+
     ${CMAKE_SOURCE_DIR}/src/sanitization/system_protection.cpp
     ${CMAKE_SOURCE_DIR}/src/sanitization/secure_file_eraser.cpp
     ${CMAKE_SOURCE_DIR}/src/sanitization/secure_folder_eraser.cpp

@@ -11,6 +11,9 @@
 #include "filesystem/exfat_analyzer.hpp"
 #include "filesystem/ntfs_analyzer.hpp"
 #include "recovery/recovery_engine.hpp"
+#include "recovery/directory_scanner.hpp"
+#include "logging/audit_logger.hpp"
+
 
 #include <chrono>
 #include <filesystem>
@@ -120,6 +123,17 @@ EraseResult FileEraserAPI::eraseFile(const std::string& filePath,
         result.errorMessage = vr.details;
     }
 
+    try {
+        std::string homeDir = core::Platform::getUserHomeDirectory();
+        if (!homeDir.empty() && homeDir != ".") {
+            fs::path configDir = fs::path(homeDir) / ".config" / "forensivault";
+            std::error_code secEc;
+            fs::create_directories(configDir, secEc);
+            fs::path journalPath = configDir / "audit_journal.jsonl";
+            logging::AuditLogger::getInstance().saveToFile(journalPath.string());
+        }
+    } catch (...) {}
+
     return result;
 }
 
@@ -172,6 +186,17 @@ EraseResult FileEraserAPI::eraseDirectory(const std::string& dirPath,
     if (!fr.success) {
         result.errorMessage = fr.details;
     }
+
+    try {
+        std::string homeDir = core::Platform::getUserHomeDirectory();
+        if (!homeDir.empty() && homeDir != ".") {
+            fs::path configDir = fs::path(homeDir) / ".config" / "forensivault";
+            std::error_code secEc;
+            fs::create_directories(configDir, secEc);
+            fs::path journalPath = configDir / "audit_journal.jsonl";
+            logging::AuditLogger::getInstance().saveToFile(journalPath.string());
+        }
+    } catch (...) {}
 
     return result;
 }
@@ -350,9 +375,20 @@ VolumeMetadata FsRecoveryAPI::probeVolume(const std::string& imagePath, uint64_t
     core::DiskImageReader reader(imagePath);
     if (!reader.isOpen()) return meta;
 
+    uint64_t startSector = partitionOffset;
+    if (partitionOffset >= 512 && partitionOffset % 512 == 0) {
+        uint64_t candSector = partitionOffset / 512;
+        filesystem::FAT32Analyzer f;
+        filesystem::ExFATAnalyzer e;
+        filesystem::NTFSAnalyzer n;
+        if (f.probe(reader, candSector) || e.probe(reader, candSector) || n.probe(reader, candSector)) {
+            startSector = candSector;
+        }
+    }
+
     // Try FAT32
     filesystem::FAT32Analyzer fat32;
-    if (fat32.probe(reader, partitionOffset)) {
+    if (fat32.probe(reader, startSector)) {
         auto vol = fat32.getVolumeInfo();
         meta.valid = true;
         meta.type = FilesystemType::FAT32;
@@ -366,7 +402,7 @@ VolumeMetadata FsRecoveryAPI::probeVolume(const std::string& imagePath, uint64_t
 
     // Try exFAT
     filesystem::ExFATAnalyzer exfat;
-    if (exfat.probe(reader, partitionOffset)) {
+    if (exfat.probe(reader, startSector)) {
         auto vol = exfat.getVolumeInfo();
         meta.valid = true;
         meta.type = FilesystemType::EXFAT;
@@ -380,7 +416,7 @@ VolumeMetadata FsRecoveryAPI::probeVolume(const std::string& imagePath, uint64_t
 
     // Try NTFS
     filesystem::NTFSAnalyzer ntfs;
-    if (ntfs.probe(reader, partitionOffset)) {
+    if (ntfs.probe(reader, startSector)) {
         auto vol = ntfs.getVolumeInfo();
         meta.valid = true;
         meta.type = FilesystemType::NTFS;
@@ -397,7 +433,7 @@ VolumeMetadata FsRecoveryAPI::probeVolume(const std::string& imagePath, uint64_t
 
 FilesystemRecoverySummary FsRecoveryAPI::recover(const std::string& imagePath,
                                                const std::string& outputDirectory,
-                                               uint64_t /*partitionOffset*/) {
+                                               uint64_t partitionOffset) {
     FilesystemRecoverySummary summary;
     core::DiskImageReader reader(imagePath);
     if (!reader.isOpen()) {
@@ -405,9 +441,20 @@ FilesystemRecoverySummary FsRecoveryAPI::recover(const std::string& imagePath,
         return summary;
     }
 
+    uint64_t startSector = partitionOffset;
+    if (partitionOffset >= 512 && partitionOffset % 512 == 0) {
+        uint64_t candSector = partitionOffset / 512;
+        filesystem::FAT32Analyzer f;
+        filesystem::ExFATAnalyzer e;
+        filesystem::NTFSAnalyzer n;
+        if (f.probe(reader, candSector) || e.probe(reader, candSector) || n.probe(reader, candSector)) {
+            startSector = candSector;
+        }
+    }
+
     recovery::RecoveryEngine engine;
     recovery::CaseContext ctx;
-    auto rep = engine.runRecovery(reader, outputDirectory, ctx);
+    auto rep = engine.runRecovery(reader, outputDirectory, ctx, startSector);
 
     summary.success = rep.fs_detected;
     summary.type = rep.fs_type == filesystem::FsType::FAT32 ? FilesystemType::FAT32 :
@@ -441,4 +488,101 @@ FilesystemRecoverySummary FsRecoveryAPI::recover(const std::string& imagePath,
     return summary;
 }
 
+// ============================================================================
+// DirectoryRecoveryAPI Implementation
+// ============================================================================
+
+DirectoryVolumeInfo DirectoryRecoveryAPI::inspectDirectory(const std::string& directoryPath) {
+    auto minfo = recovery::DirectoryScanner::resolveMountInfo(directoryPath);
+    DirectoryVolumeInfo vol;
+    vol.directoryPath = minfo.directory_path;
+    vol.mountPoint = minfo.mount_point;
+    vol.filesystemType = minfo.filesystem_type;
+    vol.devicePath = minfo.device_path;
+    vol.totalBytes = minfo.total_bytes;
+    vol.freeBytes = minfo.free_bytes;
+    vol.isDeviceReadable = minfo.is_device_readable;
+    return vol;
+}
+
+DirectoryScanResult DirectoryRecoveryAPI::scanDirectory(const std::string& directoryPath) {
+    auto res = recovery::DirectoryScanner::scanDirectory(directoryPath);
+    DirectoryScanResult result;
+    result.success = res.success;
+    result.errorMessage = res.error_message;
+    result.scanDurationMs = res.duration_ms;
+
+    result.volume.directoryPath = res.mount_info.directory_path;
+    result.volume.mountPoint = res.mount_info.mount_point;
+    result.volume.filesystemType = res.mount_info.filesystem_type;
+    result.volume.devicePath = res.mount_info.device_path;
+    result.volume.totalBytes = res.mount_info.total_bytes;
+    result.volume.freeBytes = res.mount_info.free_bytes;
+    result.volume.isDeviceReadable = res.mount_info.is_device_readable;
+
+    for (const auto& item : res.items) {
+        DiscoveredDeletedItem pubItem;
+        pubItem.id = item.id;
+        pubItem.filename = item.filename;
+        pubItem.originalPath = item.original_path;
+        pubItem.relativePath = item.relative_path;
+        pubItem.extension = item.extension;
+        pubItem.sizeBytes = item.size_bytes;
+        pubItem.isDirectory = item.is_directory;
+        pubItem.source = (item.source == recovery::DeletedItemSource::TRASH_JOURNAL) ? DetectionSource::TRASH_JOURNAL :
+                         (item.source == recovery::DeletedItemSource::FILESYSTEM_METADATA) ? DetectionSource::FILESYSTEM_METADATA :
+                         (item.source == recovery::DeletedItemSource::SANITIZED_AUDIT) ? DetectionSource::SANITIZED_AUDIT :
+                         DetectionSource::CLUSTER_CARVED;
+        pubItem.confidenceScore = item.confidence_score;
+        pubItem.confidenceLevel = item.confidence_level;
+        pubItem.deletionTimestamp = item.deletion_timestamp;
+        pubItem.payloadLocator = item.payload_location;
+        pubItem.selected = item.selected;
+        result.items.push_back(std::move(pubItem));
+    }
+
+    return result;
+}
+
+DirectoryRecoveryResult DirectoryRecoveryAPI::recoverItems(
+    const std::string& directoryPath,
+    const std::vector<DiscoveredDeletedItem>& itemsToRecover,
+    const std::string& outputDirectory) {
+
+    std::vector<recovery::ScannedDeletedItem> internalItems;
+    for (const auto& item : itemsToRecover) {
+        recovery::ScannedDeletedItem it;
+        it.id = item.id;
+        it.filename = item.filename;
+        it.original_path = item.originalPath;
+        it.relative_path = item.relativePath;
+        it.extension = item.extension;
+        it.size_bytes = item.sizeBytes;
+        it.is_directory = item.isDirectory;
+        it.source = (item.source == DetectionSource::TRASH_JOURNAL) ? recovery::DeletedItemSource::TRASH_JOURNAL :
+                    (item.source == DetectionSource::FILESYSTEM_METADATA) ? recovery::DeletedItemSource::FILESYSTEM_METADATA :
+                    (item.source == DetectionSource::SANITIZED_AUDIT) ? recovery::DeletedItemSource::SANITIZED_AUDIT :
+                    recovery::DeletedItemSource::CLUSTER_CARVED;
+        it.confidence_score = item.confidenceScore;
+        it.confidence_level = item.confidenceLevel;
+        it.deletion_timestamp = item.deletionTimestamp;
+        it.payload_location = item.payloadLocator;
+        it.selected = item.selected;
+        internalItems.push_back(std::move(it));
+    }
+
+    auto res = recovery::DirectoryScanner::recoverItems(directoryPath, internalItems, outputDirectory);
+    DirectoryRecoveryResult result;
+    result.success = res.success;
+    result.errorMessage = res.error_message;
+    result.requestedCount = res.requested_count;
+    result.recoveredCount = res.recovered_count;
+    result.recoveredBytes = res.recovered_bytes;
+    result.recoveredFiles = std::move(res.recovered_files);
+    result.errors = std::move(res.errors);
+
+    return result;
+}
+
 } // namespace forensivault::api
+

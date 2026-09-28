@@ -118,9 +118,12 @@ void ViewDriveSanitizer::renderDeviceSelection() {
 void ViewDriveSanitizer::renderControls() {
     if (UITheme::beginCard("DriveAlgoCard", "Sanitization Standard & Method", "COMPLIANCE METHOD", UITheme::COLOR_ORANGE)) {
         ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Select Certified Overwrite Standard:");
+        ImGui::Spacing();
         int stdIdx = static_cast<int>(selectedStandard_);
         ImGui::RadioButton("NIST SP 800-88 Rev 1 Clear (Single-Pass 0x00 with Sampling Verification) [Recommended]", &stdIdx, 0);
+        ImGui::Spacing();
         ImGui::RadioButton("DoD 5220.22-M 3-Pass (0x00, 0xFF, PRNG + Lead/Median/Tail Sector Readback)", &stdIdx, 1);
+        ImGui::Spacing();
         ImGui::RadioButton("Pseudorandom (1-Pass Cryptographic Hardware PRNG Overwrite)", &stdIdx, 2);
         selectedStandard_ = static_cast<forensivault::api::DriveSanitizeStandard>(stdIdx);
 
@@ -150,26 +153,44 @@ void ViewDriveSanitizer::renderProgressCard() {
 }
 
 void ViewDriveSanitizer::renderResultsCard() {
+    forensivault::api::DriveSanitizeResult res;
+    {
+        std::lock_guard<std::mutex> lock(resultMutex_);
+        res = finalResult_;
+    }
+
     if (UITheme::beginCard("DriveResultsCard", "Sanitization & Sector Verification Certificate",
-                           finalResult_.success ? "VERIFIED COMPLIANT" : "SANITIZATION FAILED",
-                           finalResult_.success ? UITheme::COLOR_GREEN : UITheme::COLOR_RED)) {
-        if (finalResult_.success) {
+                           res.success ? "VERIFIED COMPLIANT" : "SANITIZATION FAILED",
+                           res.success ? UITheme::COLOR_GREEN : UITheme::COLOR_RED)) {
+        if (res.success) {
             UITheme::renderSuccessBanner("All target sectors overwritten and lead/median/tail sampling verification confirmed non-recoverable.");
             ImGui::Columns(3, nullptr, false);
-            double gb = static_cast<double>(finalResult_.totalBytesSanitized) / (1024.0 * 1024.0 * 1024.0);
-            ImGui::Text("Bytes Sanitized:   %llu bytes (%.2f GB)", static_cast<unsigned long long>(finalResult_.totalBytesSanitized), gb);
-            ImGui::Text("Passes Completed:  %d", finalResult_.passesCompleted);
+            double gb = static_cast<double>(res.totalBytesSanitized) / (1024.0 * 1024.0 * 1024.0);
+            UITheme::renderWrappedText("Bytes Sanitized:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "%.2f GB (%llu bytes)", gb, static_cast<unsigned long long>(res.totalBytesSanitized));
+            ImGui::Spacing();
+            UITheme::renderWrappedText("Passes Completed:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "%d passes", res.passesCompleted);
+
             ImGui::NextColumn();
-            ImGui::Text("Compliance:        NIST SP 800-88 / DoD 5220.22-M");
-            ImGui::Text("Verification:      %s", finalResult_.verificationPassed ? "[CONFIRMED COMPLIANT]" : "[UNVERIFIED]");
+            UITheme::renderWrappedText("Compliance Standard:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedText("NIST SP 800-88 / DoD 5220.22-M", UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Spacing();
+            UITheme::renderWrappedText("Sector Verification:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedText(res.verificationPassed ? "[CONFIRMED COMPLIANT]" : "[UNVERIFIED]",
+                                       res.verificationPassed ? UITheme::COLOR_GREEN : UITheme::COLOR_YELLOW);
+
             ImGui::NextColumn();
-            ImGui::Text("Duration:          %.2f seconds", finalResult_.durationSeconds);
-            if (!finalResult_.auditSignature.empty()) {
-                ImGui::TextDisabled("Audit Sig: %s", finalResult_.auditSignature.substr(0, 16).c_str());
+            UITheme::renderWrappedText("Duration:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "%.2f seconds", res.durationSeconds);
+            ImGui::Spacing();
+            if (!res.auditSignature.empty()) {
+                UITheme::renderWrappedText("Audit Signature:", UITheme::COLOR_TEXT_MUTED);
+                UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "%s...", res.auditSignature.substr(0, 16).c_str());
             }
             ImGui::Columns(1);
         } else {
-            UITheme::renderDangerBanner(finalResult_.errorMessage.c_str());
+            UITheme::renderDangerBanner(res.errorMessage.c_str());
         }
     }
     UITheme::endCard();
@@ -229,21 +250,25 @@ void ViewDriveSanitizer::renderConfirmationModal() {
                     AppContext::getInstance().currentOperation.update(frac, ss.str(), sub.str());
                 };
 
-                finalResult_ = forensivault::api::DriveSanitizerAPI::sanitize(target, stdChoice, cb);
-                hasResult_ = true;
+                auto res = forensivault::api::DriveSanitizerAPI::sanitize(target, stdChoice, cb);
+                {
+                    std::lock_guard<std::mutex> lock(resultMutex_);
+                    finalResult_ = res;
+                }
+                hasResult_.store(true);
 
-                if (finalResult_.success) {
+                if (res.success) {
                     AppContext::getInstance().totalDrivesSanitized++;
-                    std::string summary = "Sanitized " + std::to_string(finalResult_.totalBytesSanitized / (1024 * 1024)) + " MB.";
+                    std::string summary = "Sanitized " + std::to_string(res.totalBytesSanitized / (1024 * 1024)) + " MB.";
                     AppContext::getInstance().currentOperation.finish(true, summary);
                     AppContext::getInstance().postNotification(
                         Notification::Type::SUCCESS, "Drive Sanitization Complete",
                         "Target device verified sanitized.");
                 } else {
-                    AppContext::getInstance().currentOperation.finish(false, finalResult_.errorMessage);
+                    AppContext::getInstance().currentOperation.finish(false, res.errorMessage);
                     AppContext::getInstance().postNotification(
                         Notification::Type::FAILURE, "Drive Sanitization Failed",
-                        finalResult_.errorMessage);
+                        res.errorMessage);
                 }
             });
         }

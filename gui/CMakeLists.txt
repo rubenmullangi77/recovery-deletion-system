@@ -90,6 +90,8 @@ set(GUI_SOURCES
     src/view_drive_sanitizer.cpp
     src/view_carver.cpp
     src/view_fs_recovery.cpp
+    src/view_directory_recovery.cpp
+
     src/view_disk_inspect.cpp
     src/view_device_detector.cpp
     src/view_benchmark.cpp

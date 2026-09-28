@@ -12,7 +12,9 @@ add_executable(forensivault_tests
     test_drive_sanitization.cpp
     test_audit_logging.cpp
     test_reporting.cpp
+    test_directory_recovery.cpp
 )
+
 
 target_include_directories(forensivault_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

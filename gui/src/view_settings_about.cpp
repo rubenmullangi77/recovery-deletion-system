@@ -19,10 +19,33 @@ void ViewSettingsAbout::render() {
     UITheme::renderCardHeader("SETTINGS, COMPLIANCE & PLATFORM SPECIFICATIONS",
                               "Forensic Standards Accreditation, Cryptographic Benchmarking & Workstation Security");
 
+    renderThemeSettings();
     renderComplianceSpecs();
     renderSecurityContext();
     renderCryptoBenchmark();
     renderAboutPlatform();
+}
+
+void ViewSettingsAbout::renderThemeSettings() {
+    auto& ctx = AppContext::getInstance();
+    bool isDark = UITheme::isDarkTheme();
+
+    if (UITheme::beginCard("SetCard_Theme", "Workstation Theme",
+                           isDark ? "DARK" : "LIGHT",
+                           isDark ? UITheme::COLOR_BLUE : UITheme::COLOR_ORANGE)) {
+        ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Select your theme");
+        ImGui::Spacing();
+
+        int themeChoice = isDark ? 1 : 0;
+        if (ImGui::RadioButton("Light", &themeChoice, 0)) {
+            if (isDark) ctx.setDarkTheme(false);
+        }
+        ImGui::Spacing();
+        if (ImGui::RadioButton("Dark", &themeChoice, 1)) {
+            if (!isDark) ctx.setDarkTheme(true);
+        }
+    }
+    UITheme::endCard();
 }
 
 void ViewSettingsAbout::renderComplianceSpecs() {
@@ -30,21 +53,24 @@ void ViewSettingsAbout::renderComplianceSpecs() {
                            "CERTIFIED SPECIFICATION", UITheme::COLOR_GREEN)) {
         ImGui::Columns(3, nullptr, false);
 
-        ImGui::TextColored(UITheme::COLOR_ORANGE, "NIST SP 800-88 Rev 1");
-        ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Media Sanitization Guidelines");
-        ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "Implements 'Clear' single-pass zero overwrite with lead, median, and tail sampling verification.");
+        UITheme::renderWrappedText("NIST SP 800-88 Rev 1", UITheme::COLOR_ORANGE);
+        UITheme::renderWrappedText("Media Sanitization Guidelines", UITheme::COLOR_TEXT_PRIMARY);
+        ImGui::Spacing();
+        UITheme::renderWrappedText("Implements 'Clear' single-pass zero overwrite with lead, median, and tail sampling verification.", UITheme::COLOR_TEXT_MUTED);
 
         ImGui::NextColumn();
 
-        ImGui::TextColored(UITheme::COLOR_ORANGE, "DoD 5220.22-M");
-        ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "National Industrial Security");
-        ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "3-Pass overwrite standard (0x00, 0xFF, Cryptographic PRNG) for non-volatile magnetic storage.");
+        UITheme::renderWrappedText("DoD 5220.22-M", UITheme::COLOR_ORANGE);
+        UITheme::renderWrappedText("National Industrial Security", UITheme::COLOR_TEXT_PRIMARY);
+        ImGui::Spacing();
+        UITheme::renderWrappedText("3-Pass overwrite standard (0x00, 0xFF, Cryptographic PRNG) for non-volatile magnetic storage.", UITheme::COLOR_TEXT_MUTED);
 
         ImGui::NextColumn();
 
-        ImGui::TextColored(UITheme::COLOR_BLUE, "ISO/IEC 27040");
-        ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Storage Security Architecture");
-        ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "Enforces immutable read-only evidence access and SHA-256 chained tamper-evident audit logging.");
+        UITheme::renderWrappedText("ISO/IEC 27040", UITheme::COLOR_BLUE);
+        UITheme::renderWrappedText("Storage Security Architecture", UITheme::COLOR_TEXT_PRIMARY);
+        ImGui::Spacing();
+        UITheme::renderWrappedText("Enforces immutable read-only evidence access and SHA-256 chained tamper-evident audit logging.", UITheme::COLOR_TEXT_MUTED);
 
         ImGui::Columns(1);
     }
@@ -59,20 +85,27 @@ void ViewSettingsAbout::renderSecurityContext() {
                            ctx.isElevated ? UITheme::COLOR_GREEN : UITheme::COLOR_YELLOW)) {
         ImGui::Columns(2, nullptr, false);
 
-        ImGui::Text("Host Operating System:      %s", ctx.platformName.c_str());
-        ImGui::Text("Execution Privilege Level:  %s", ctx.isElevated ? "Administrator / Elevated (Full Raw I/O)" : "Standard User (Restricted to Virtual Images & Files)");
+        UITheme::renderWrappedText("Host Operating System:", UITheme::COLOR_TEXT_MUTED);
+        UITheme::renderWrappedText(ctx.platformName.c_str(), UITheme::COLOR_TEXT_PRIMARY);
+        ImGui::Spacing();
+        UITheme::renderWrappedText("Execution Privilege Level:", UITheme::COLOR_TEXT_MUTED);
+        const char* privDesc = ctx.isElevated ? "Administrator / Elevated (Full Raw I/O)"
+                                              : "Standard User (Restricted to Virtual Images & Files)";
+        UITheme::renderWrappedText(privDesc, ctx.isElevated ? UITheme::COLOR_GREEN : UITheme::COLOR_YELLOW);
 
         ImGui::NextColumn();
 
         if (!ctx.isElevated) {
-            ImGui::TextColored(UITheme::COLOR_YELLOW, "Elevate privileges to enable direct physical drive sanitization and raw disk enumeration.");
+            UITheme::renderWrappedText("Elevate privileges to enable direct physical drive sanitization and raw disk enumeration.", UITheme::COLOR_YELLOW);
             ImGui::Spacing();
-            if (UITheme::renderPrimaryButton("Request Elevation (UAC)...", ImVec2(240, 32))) {
+            const char* btnElev = ctx.platformName == "Windows" ? "Request Elevation (UAC)..." : "Request Elevation (Polkit)...";
+            if (UITheme::renderPrimaryButton(btnElev, ImVec2(-1, 34))) {
                 ctx.requestElevation();
             }
         } else {
-            ImGui::TextColored(UITheme::COLOR_GREEN, "Full kernel-level raw I/O privileges are active.");
-            ImGui::TextDisabled("Physical drives and partition tables can be inspected directly.");
+            UITheme::renderWrappedText("Full kernel-level raw I/O privileges are active.", UITheme::COLOR_GREEN);
+            ImGui::Spacing();
+            UITheme::renderWrappedText("Physical drives and partition tables can be inspected directly.", UITheme::COLOR_TEXT_MUTED);
         }
 
         ImGui::Columns(1);
@@ -174,7 +207,7 @@ void ViewSettingsAbout::renderCryptoBenchmark() {
 void ViewSettingsAbout::renderAboutPlatform() {
     if (UITheme::beginCard("SetCard_About", "About ForensiVault Forensic Station", "v1.0.0 RELEASE", UITheme::COLOR_ORANGE)) {
         ImGui::TextColored(UITheme::COLOR_ORANGE, "ForensiVault Desktop Engine");
-        ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY, "Unified Forensic Recovery, File Carving & Certified Media Sanitization Platform");
+        UITheme::renderWrappedText("Unified Forensic Recovery, File Carving & Certified Media Sanitization Platform", UITheme::COLOR_TEXT_SECONDARY);
         ImGui::Spacing();
 
         ImGui::Text("Core Architecture:   C++17 Standalone Engine (`forensivault_core`)");
@@ -183,8 +216,9 @@ void ViewSettingsAbout::renderAboutPlatform() {
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
-        ImGui::TextColored(UITheme::COLOR_TEXT_MUTED,
-            "Forensic Immutability Notice: Evidence sources are accessed in read-only mode. Destructive sanitization requires explicit confirmation and cannot be undone.");
+        UITheme::renderWrappedText(
+            "Forensic Immutability Notice: Evidence sources are accessed in read-only mode. Destructive sanitization requires explicit confirmation and cannot be undone.",
+            UITheme::COLOR_TEXT_MUTED);
     }
     UITheme::endCard();
 }

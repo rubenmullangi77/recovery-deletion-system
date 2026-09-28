@@ -11,6 +11,7 @@ namespace forensivault::gui {
 
 enum class ModuleTab {
     DASHBOARD,
+    DIRECTORY_RECOVERY,
     DRIVE_SANITIZER,
     FILE_ERASER,
     FS_RECOVERY,
@@ -80,7 +81,13 @@ public:
 
     ModuleTab activeTab = ModuleTab::DASHBOARD;
     bool isElevated = false;
+    bool isDarkTheme = false;
     std::string platformName;
+
+    void setDarkTheme(bool dark);
+    void loadSettings();
+    void saveSettings();
+    std::string getSettingsFilePath() const;
 
     // Cross-tab transfer fields
     std::string targetDriveForSanitization;
@@ -115,6 +122,7 @@ public:
 
 private:
     AppContext() = default;
+    std::mutex notificationsMutex_;
     std::vector<Notification> notifications_;
 };
 

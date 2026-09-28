@@ -23,7 +23,8 @@ void ViewDashboard::renderMetricsOverview() {
     auto& ctx = AppContext::getInstance();
 
     float totalW = ImGui::GetContentRegionAvail().x;
-    float cardW = (totalW - 36.0f) / 4.0f;
+    float itemSpacing = ImGui::GetStyle().ItemSpacing.x;
+    float cardW = (totalW - 3.0f * itemSpacing) / 4.0f;
     if (cardW < 180.0f) cardW = 180.0f;
 
     // Card 1: Platform & Privileges
@@ -68,40 +69,38 @@ void ViewDashboard::renderQuickLaunchModules() {
     // -------------------------------------------------------------------------
     // DOMAIN 1: FORENSIC DATA RECOVERY (EVIDENCE PRESERVATION)
     // -------------------------------------------------------------------------
-    if (UITheme::beginCard("DomainRecoveryCard", "DOMAIN 1: FORENSIC RECOVERY & PRESERVATION",
-                           "STRICT READ-ONLY", UITheme::COLOR_BLUE)) {
-        ImGui::TextColored(UITheme::COLOR_BLUE, "[Preservation Operations]");
-        ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY,
-            "Non-destructive discovery, cluster parsing, and evidence reconstruction without modifying source storage media.");
-        ImGui::Spacing();
-        ImGui::Separator();
+    if (UITheme::beginCard("DomainRecoveryCard", "Forensic Recovery & Preservation",
+                           "READ-ONLY", UITheme::COLOR_BLUE)) {
+        UITheme::renderWrappedText(
+            "Non-destructive discovery, cluster parsing, and evidence reconstruction without modifying source storage media.",
+            UITheme::COLOR_TEXT_SECONDARY);
         ImGui::Spacing();
 
         // Recovery Tool 1: Filesystem Metadata Recovery
-        if (UITheme::beginCard("RecSubCard_Fs", "Filesystem Metadata Recovery", "FAT32 / exFAT / NTFS", UITheme::COLOR_BLUE, 115.0f)) {
-            ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Reconstructs directory trees, file names, and timestamps from volume tables and $MFT.");
-            ImGui::Spacing();
-            if (UITheme::renderRecoveryButton("Launch Filesystem Recovery ->", ImVec2(-1, 32))) {
+        if (UITheme::beginCard("RecSubCard_Fs", "Filesystem Metadata Recovery", "FAT32 • exFAT • NTFS", UITheme::COLOR_BLUE)) {
+            UITheme::renderWrappedText("Reconstructs directory trees, file names, and timestamps from volume tables and $MFT.", UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Dummy(ImVec2(0, 6.0f));
+            if (UITheme::renderRecoveryButton("Launch Filesystem Recovery ->", ImVec2(-1, 34))) {
                 ctx.activeTab = ModuleTab::FS_RECOVERY;
             }
         }
         UITheme::endCard();
 
         // Recovery Tool 2: Deep Raw Data File Carving
-        if (UITheme::beginCard("RecSubCard_Carver", "Advanced Raw Data File Carver", "SIGNATURE CARVING", UITheme::COLOR_BLUE, 115.0f)) {
-            ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Bypasses corrupted filesystems. Carves PDF, DOCX, XLSX, OLE, JPEG, and MP4 from unallocated clusters.");
-            ImGui::Spacing();
-            if (UITheme::renderRecoveryButton("Launch Raw File Carver ->", ImVec2(-1, 32))) {
+        if (UITheme::beginCard("RecSubCard_Carver", "Raw Data File Carver", "SIGNATURE CARVER", UITheme::COLOR_BLUE)) {
+            UITheme::renderWrappedText("Bypasses corrupted filesystems. Carves PDF, DOCX, XLSX, OLE, JPEG, and MP4 from unallocated clusters.", UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Dummy(ImVec2(0, 6.0f));
+            if (UITheme::renderRecoveryButton("Launch Raw File Carver ->", ImVec2(-1, 34))) {
                 ctx.activeTab = ModuleTab::FILE_CARVER;
             }
         }
         UITheme::endCard();
 
         // Recovery Tool 3: Recovered Evidence Catalog
-        if (UITheme::beginCard("RecSubCard_Catalog", "Recovered Evidence Browser", "ARTIFACT REGISTRY", UITheme::COLOR_BLUE, 115.0f)) {
-            ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Filter, inspect, and export all recovered files with confidence scores and SHA-256 hashes.");
-            ImGui::Spacing();
-            if (UITheme::renderSecondaryButton("Open Recovered Files Browser ->", ImVec2(-1, 32))) {
+        if (UITheme::beginCard("RecSubCard_Catalog", "Recovered Evidence Browser", "ARTIFACT REGISTRY", UITheme::COLOR_BLUE)) {
+            UITheme::renderWrappedText("Filter, inspect, and export all recovered files with confidence scores and SHA-256 hashes.", UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Dummy(ImVec2(0, 6.0f));
+            if (UITheme::renderSecondaryButton("Open Recovered Files Browser ->", ImVec2(-1, 34))) {
                 ctx.activeTab = ModuleTab::RECOVERED_FILES;
             }
         }
@@ -114,40 +113,38 @@ void ViewDashboard::renderQuickLaunchModules() {
     // -------------------------------------------------------------------------
     // DOMAIN 2: SECURE DATA SANITIZATION (DATA ERADICATION)
     // -------------------------------------------------------------------------
-    if (UITheme::beginCard("DomainSanitizeCard", "DOMAIN 2: SECURE SANITIZATION & ERADICATION",
-                           "PERMANENT DESTRUCTION", UITheme::COLOR_ORANGE)) {
-        ImGui::TextColored(UITheme::COLOR_ORANGE, "[Destructive Overwrite Operations]");
-        ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY,
-            "Permanent data eradication compliant with NIST SP 800-88 Rev 1 and DoD 5220.22-M to prevent unauthorized recovery.");
-        ImGui::Spacing();
-        ImGui::Separator();
+    if (UITheme::beginCard("DomainSanitizeCard", "Certified Media Sanitization",
+                           "DESTRUCTIVE", UITheme::COLOR_ORANGE)) {
+        UITheme::renderWrappedText(
+            "Permanent data eradication compliant with NIST SP 800-88 Rev 1 and DoD 5220.22-M to prevent unauthorized recovery.",
+            UITheme::COLOR_TEXT_SECONDARY);
         ImGui::Spacing();
 
         // Sanitization Tool 1: Certified Drive Sanitizer
-        if (UITheme::beginCard("SanSubCard_Drive", "Certified Drive & Media Sanitizer", "NIST SP 800-88 R1", UITheme::COLOR_ORANGE, 115.0f)) {
-            ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Block-level physical and virtual image overwrites (Single-pass 0x00, DoD 3-Pass, CSPRNG) with sector verification.");
-            ImGui::Spacing();
-            if (UITheme::renderPrimaryButton("Launch Drive Sanitizer ->", ImVec2(-1, 32))) {
+        if (UITheme::beginCard("SanSubCard_Drive", "Certified Drive Sanitizer", "NIST SP 800-88 R1", UITheme::COLOR_ORANGE)) {
+            UITheme::renderWrappedText("Block-level physical and virtual image overwrites (Single-pass 0x00, DoD 3-Pass, CSPRNG) with sector verification.", UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Dummy(ImVec2(0, 6.0f));
+            if (UITheme::renderPrimaryButton("Launch Drive Sanitizer ->", ImVec2(-1, 34))) {
                 ctx.activeTab = ModuleTab::DRIVE_SANITIZER;
             }
         }
         UITheme::endCard();
 
         // Sanitization Tool 2: Secure File & Folder Eraser
-        if (UITheme::beginCard("SanSubCard_File", "Secure File & Folder Eraser", "3x METADATA SCRAMBLE", UITheme::COLOR_ORANGE, 115.0f)) {
-            ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Targeted cluster overwrite with unbuffered cache flush and 3-pass randomized directory entry renaming.");
-            ImGui::Spacing();
-            if (UITheme::renderPrimaryButton("Launch File Eraser ->", ImVec2(-1, 32))) {
+        if (UITheme::beginCard("SanSubCard_File", "Secure File & Folder Eraser", "3x OVERWRITE", UITheme::COLOR_ORANGE)) {
+            UITheme::renderWrappedText("Targeted cluster overwrite with unbuffered cache flush and 3-pass randomized directory entry renaming.", UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Dummy(ImVec2(0, 6.0f));
+            if (UITheme::renderPrimaryButton("Launch File Eraser ->", ImVec2(-1, 34))) {
                 ctx.activeTab = ModuleTab::FILE_ERASER;
             }
         }
         UITheme::endCard();
 
         // Sanitization Tool 3: Storage Devices & Hardware Interlocks
-        if (UITheme::beginCard("SanSubCard_Devices", "Storage Devices & Hardware Interlocks", "ROOT DRIVE LOCK", UITheme::COLOR_ORANGE, 115.0f)) {
-            ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Enumerate physical storage devices, inspect bus interfaces, and verify OS root drive protection locks.");
-            ImGui::Spacing();
-            if (UITheme::renderSecondaryButton("Inspect Devices & Locks ->", ImVec2(-1, 32))) {
+        if (UITheme::beginCard("SanSubCard_Devices", "Storage Devices & Hardware Locks", "ROOT DRIVE LOCK", UITheme::COLOR_ORANGE)) {
+            UITheme::renderWrappedText("Enumerate physical storage devices, inspect bus interfaces, and verify OS root drive protection locks.", UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Dummy(ImVec2(0, 6.0f));
+            if (UITheme::renderSecondaryButton("Inspect Devices & Locks ->", ImVec2(-1, 34))) {
                 ctx.activeTab = ModuleTab::DEVICE_DETECTOR;
             }
         }
@@ -156,7 +153,7 @@ void ViewDashboard::renderQuickLaunchModules() {
     UITheme::endCard();
 
     ImGui::Columns(1);
-    ImGui::Spacing();
+    ImGui::Dummy(ImVec2(0, 8.0f));
 }
 
 void ViewDashboard::renderForensicReadiness() {
@@ -164,16 +161,19 @@ void ViewDashboard::renderForensicReadiness() {
                            "STANDARDS COMPLIANT", UITheme::COLOR_GREEN)) {
         ImGui::Columns(3, nullptr, false);
 
-        ImGui::TextColored(UITheme::COLOR_GREEN, "[ ACTIVE ] Root Drive Interlock");
-        ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "OS boot drives and primary system partitions are permanently locked against sanitization.");
+        UITheme::renderWrappedText("[ ACTIVE ] Root Drive Interlock", UITheme::COLOR_GREEN);
+        ImGui::Spacing();
+        UITheme::renderWrappedText("OS boot drives and primary system partitions are permanently locked against sanitization.", UITheme::COLOR_TEXT_MUTED);
 
         ImGui::NextColumn();
-        ImGui::TextColored(UITheme::COLOR_BLUE, "[ ACTIVE ] Evidence Read-Only Mode");
-        ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "Disk image and raw evidence streams are opened in strictly immutable, read-only mode.");
+        UITheme::renderWrappedText("[ ACTIVE ] Evidence Read-Only Mode", UITheme::COLOR_BLUE);
+        ImGui::Spacing();
+        UITheme::renderWrappedText("Disk image and raw evidence streams are opened in strictly immutable, read-only mode.", UITheme::COLOR_TEXT_MUTED);
 
         ImGui::NextColumn();
-        ImGui::TextColored(UITheme::COLOR_GREEN, "[ ACTIVE ] Cryptographic Audit Trail");
-        ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "Every forensic scan and erasure is recorded with chained SHA-256 hash validation.");
+        UITheme::renderWrappedText("[ ACTIVE ] Cryptographic Audit Trail", UITheme::COLOR_GREEN);
+        ImGui::Spacing();
+        UITheme::renderWrappedText("Every forensic scan and erasure is recorded with chained SHA-256 hash validation.", UITheme::COLOR_TEXT_MUTED);
 
         ImGui::Columns(1);
     }
@@ -188,7 +188,7 @@ void ViewDashboard::renderRecentOperations() {
         if (entries.empty()) {
             ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "No forensic operations logged in the current session.");
         } else {
-            if (ImGui::BeginTable("DashAuditTable", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY, ImVec2(0, 140))) {
+            if (ImGui::BeginTable("DashAuditTable", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
                 ImGui::TableSetupColumn("Timestamp (UTC)", ImGuiTableColumnFlags_WidthFixed, 180.0f);
                 ImGui::TableSetupColumn("Module / Operation", ImGuiTableColumnFlags_WidthFixed, 180.0f);
                 ImGui::TableSetupColumn("Target Source", ImGuiTableColumnFlags_WidthStretch);

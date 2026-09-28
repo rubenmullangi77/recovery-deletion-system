@@ -1,6 +1,7 @@
-#pragma once
-
+#include "async_task.hpp"
 #include <string>
+#include <atomic>
+#include <mutex>
 
 namespace forensivault::gui {
 
@@ -13,8 +14,10 @@ public:
 private:
     char payloadBuffer_[1024];
 
-    // Benchmark results
-    bool hasResult_ = false;
+    // Benchmark execution & results
+    AsyncTaskRunner benchRunner_;
+    std::atomic<bool> hasResult_{false};
+    std::mutex resultMutex_;
     std::string sha256Hash_;
     std::string md5Hash_;
     double entropyScore_ = 0.0;

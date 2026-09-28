@@ -263,6 +263,8 @@ void printHelp() {
     FV_PRINTLN("  --help, -h                   Show this forensic help reference");
     FV_PRINTLN("  --version, -v                Display ForensiVault engine version & platform");
     FV_PRINTLN("  --benchmark-hash             Run SHA-256 and MD5 hashing benchmarks");
+    FV_PRINTLN("  --scan-dir <path>            Scan live directory for previously deleted files/folders");
+    FV_PRINTLN("  --recover-dir <dir> [out]    Scan and recover deleted files from directory to output folder");
     FV_PRINTLN("  --scan-image <path>          Scan a disk image (.dd, .img) in READ-ONLY mode");
     FV_PRINTLN("  --carve <image> [out]        Execute deep file carving & extraction");
     FV_PRINTLN("  --fs-recover <img discipline>[out] Probe & recover filesystem structure (FAT32/exFAT/NTFS)");
@@ -1093,6 +1095,99 @@ int main(int argc, char* argv[]) {
 
     if (args[0] == "--benchmark-hash") {
         interactiveBenchmark();
+        return 0;
+    }
+
+    if (args[0] == "--scan-dir") {
+        if (args.size() < 2) {
+            FV_PRINTERRLN("[ERROR] Missing directory path argument for --scan-dir");
+            FV_PRINTERRLN("Usage: forensivault_cli --scan-dir <directory_path>");
+            return 1;
+        }
+        std::string dirPath = args[1];
+        FV_PRINTLN("[+] Inspecting directory and underlying mount volume: " + dirPath);
+        auto scanRes = forensivault::api::DirectoryRecoveryAPI::scanDirectory(dirPath);
+        if (!scanRes.success) {
+            FV_PRINTERRLN("[ERROR] Directory scan failed: " + scanRes.errorMessage);
+            return 1;
+        }
+
+        FV_PRINTLN("\n============================================================");
+        FV_PRINTLN("        ForensiVault Directory Deleted Files Scan           ");
+        FV_PRINTLN("============================================================");
+        FV_PRINTLN("Directory:        " + scanRes.volume.directoryPath);
+        FV_PRINTLN("Mount Point:      " + scanRes.volume.mountPoint);
+        FV_PRINTLN("Filesystem Type:  " + scanRes.volume.filesystemType);
+        FV_PRINTLN("Block Device:     " + (scanRes.volume.devicePath.empty() ? "(Virtual / Loop)" : scanRes.volume.devicePath));
+        {
+            std::ostringstream ss;
+            ss << "Volume Capacity:  " << (scanRes.volume.totalBytes / (1024 * 1024)) << " MB ("
+               << (scanRes.volume.freeBytes / (1024 * 1024)) << " MB free)";
+            FV_PRINTLN(ss.str());
+        }
+        FV_PRINTLN("Scan Duration:    " + std::to_string(scanRes.scanDurationMs) + " ms");
+        FV_PRINTLN("Deleted Artifacts Found: " + std::to_string(scanRes.items.size()));
+        FV_PRINTLN("------------------------------------------------------------");
+
+        if (scanRes.items.empty()) {
+            FV_PRINTLN("No previously deleted files or journal entries detected for this directory.");
+        } else {
+            size_t idx = 1;
+            for (const auto& it : scanRes.items) {
+                std::string srcBadge = (it.source == forensivault::api::DetectionSource::TRASH_JOURNAL) ? "[TRASH JOURNAL]" :
+                                       (it.source == forensivault::api::DetectionSource::FILESYSTEM_METADATA) ? "[METADATA ENTRY]" :
+                                       (it.source == forensivault::api::DetectionSource::SANITIZED_AUDIT) ? "[SANITIZED / DESTROYED]" : "[CARVED CLUSTER]";
+                std::string sizeStr;
+                if (it.sizeBytes < 1024) sizeStr = std::to_string(it.sizeBytes) + " B";
+                else if (it.sizeBytes < 1024 * 1024) sizeStr = std::to_string(it.sizeBytes / 1024) + " KB";
+                else sizeStr = std::to_string(it.sizeBytes / (1024 * 1024)) + " MB";
+
+                std::ostringstream ss;
+                ss << "  #" << idx++ << " " << srcBadge << " " << it.filename
+                   << " (" << sizeStr << ", " << it.confidenceLevel << " " << it.confidenceScore << "%)"
+                   << "\n      Original: " << it.originalPath
+                   << "\n      Date:     " << it.deletionTimestamp;
+                FV_PRINTLN(ss.str());
+            }
+        }
+        FV_PRINTLN("============================================================\n");
+        return 0;
+    }
+
+    if (args[0] == "--recover-dir") {
+        if (args.size() < 2) {
+            FV_PRINTERRLN("[ERROR] Missing directory path argument for --recover-dir");
+            FV_PRINTERRLN("Usage: forensivault_cli --recover-dir <directory_path> [output_directory]");
+            return 1;
+        }
+        std::string dirPath = args[1];
+        std::string outDir = (args.size() >= 3) ? args[2] : "recovered/directory";
+
+        FV_PRINTLN("[+] Scanning directory for deleted artifacts: " + dirPath);
+        auto scanRes = forensivault::api::DirectoryRecoveryAPI::scanDirectory(dirPath);
+        if (!scanRes.success) {
+            FV_PRINTERRLN("[ERROR] Scan failed: " + scanRes.errorMessage);
+            return 1;
+        }
+
+        if (scanRes.items.empty()) {
+            FV_PRINTLN("[!] No deleted artifacts discovered to recover.");
+            return 0;
+        }
+
+        FV_PRINTLN("[+] Restoring " + std::to_string(scanRes.items.size()) + " deleted files into: " + outDir);
+        auto recRes = forensivault::api::DirectoryRecoveryAPI::recoverItems(dirPath, scanRes.items, outDir);
+        if (!recRes.success) {
+            FV_PRINTERRLN("[ERROR] Recovery failed: " + recRes.errorMessage);
+            return 1;
+        }
+
+        FV_PRINTLN("[+] Successfully recovered " + std::to_string(recRes.recoveredCount) + " / " +
+                   std::to_string(recRes.requestedCount) + " files (" +
+                   std::to_string(recRes.recoveredBytes) + " bytes).");
+        for (const auto& rf : recRes.recoveredFiles) {
+            FV_PRINTLN("  - " + rf);
+        }
         return 0;
     }
 

@@ -34,20 +34,18 @@ void ViewOperationProgress::renderActiveOperation() {
     if (UITheme::beginCard("OpCard_Status", op.moduleName.c_str(), statusBadge, badgeColor)) {
         ImGui::Columns(2, nullptr, false);
 
-        ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY, "Operation Type:");
-        ImGui::SameLine();
-        ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "%s", op.operationType.c_str());
-
-        ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY, "Target Source:");
-        ImGui::SameLine();
-        ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "%s", op.targetSource.c_str());
+        UITheme::renderWrappedText("Operation Type:", UITheme::COLOR_TEXT_MUTED);
+        UITheme::renderWrappedText(op.operationType.c_str(), UITheme::COLOR_TEXT_PRIMARY);
+        ImGui::Spacing();
+        UITheme::renderWrappedText("Target Source:", UITheme::COLOR_TEXT_MUTED);
+        UITheme::renderWrappedText(op.targetSource.c_str(), UITheme::COLOR_TEXT_PRIMARY);
 
         ImGui::NextColumn();
 
         if (!op.destination.empty()) {
-            ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY, "Destination Path:");
-            ImGui::SameLine();
-            ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "%s", op.destination.c_str());
+            UITheme::renderWrappedText("Destination Path:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedText(op.destination.c_str(), UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Spacing();
         }
 
         float elapsed = op.getElapsedSeconds();
@@ -57,9 +55,8 @@ void ViewOperationProgress::renderActiveOperation() {
         ss << std::setfill('0') << std::setw(2) << mins << ":"
            << std::setfill('0') << std::setw(2) << secs;
 
-        ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY, "Elapsed Time:");
-        ImGui::SameLine();
-        ImGui::TextColored(UITheme::COLOR_ORANGE, "%s", ss.str().c_str());
+        UITheme::renderWrappedText("Elapsed Time:", UITheme::COLOR_TEXT_MUTED);
+        UITheme::renderWrappedText(ss.str().c_str(), UITheme::COLOR_ORANGE);
 
         ImGui::Columns(1);
         ImGui::Spacing();
@@ -95,8 +92,8 @@ void ViewOperationProgress::renderActiveOperation() {
     // Event Log Card
     if (UITheme::beginCard("OpCard_Log", "Operation Event Log", "LIVE CONSOLE", UITheme::COLOR_BLUE)) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, UITheme::COLOR_CREAM_INSET);
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
-        ImGui::BeginChild("LogConsole", ImVec2(0, 200), true, ImGuiWindowFlags_HorizontalScrollbar);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
+        ImGui::BeginChild("LogConsole", ImVec2(0, 320), true);
 
         if (UITheme::fontMono) ImGui::PushFont(UITheme::fontMono);
 

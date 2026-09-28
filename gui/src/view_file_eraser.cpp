@@ -12,6 +12,22 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+
+uint64_t computeDirectoryRecursiveSize(const fs::path& dirPath) {
+    uint64_t total = 0;
+    std::error_code ec;
+    if (!fs::exists(dirPath, ec) || !fs::is_directory(dirPath, ec)) return 0;
+    for (const auto& entry : fs::recursive_directory_iterator(dirPath, fs::directory_options::skip_permission_denied, ec)) {
+        if (!entry.is_directory(ec)) {
+            total += entry.file_size(ec);
+        }
+    }
+    return total;
+}
+
+} // anonymous namespace
+
 namespace forensivault::gui {
 
 ViewFileEraser::ViewFileEraser() {
@@ -100,7 +116,7 @@ void ViewFileEraser::renderTargetSelection() {
                             item.path = entry.path();
                             item.filename = entry.path().filename().string();
                             item.isDir = fs::is_directory(entry.path(), ec);
-                            item.sizeBytes = item.isDir ? 0 : fs::file_size(entry.path(), ec);
+                            item.sizeBytes = item.isDir ? computeDirectoryRecursiveSize(entry.path()) : fs::file_size(entry.path(), ec);
                             item.selected = true;
                             dirItems_.push_back(item);
                         }
@@ -132,7 +148,11 @@ void ViewFileEraser::renderDirectoryInspector() {
                 for (auto& item : dirItems_) item.selected = false;
             }
 
-            if (ImGui::BeginTable("DirItemsTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, 160))) {
+            ImGuiTableFlags tblFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable;
+            if (dirItems_.size() > 20) tblFlags |= ImGuiTableFlags_ScrollY;
+            float tableH = (dirItems_.size() > 20) ? 420.0f : 0.0f;
+
+            if (ImGui::BeginTable("DirItemsTable", 4, tblFlags, ImVec2(0, tableH))) {
                 ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_WidthFixed, 60.0f);
                 ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
                 ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 70.0f);
@@ -156,17 +176,7 @@ void ViewFileEraser::renderDirectoryInspector() {
                     }
 
                     ImGui::TableSetColumnIndex(3);
-                    if (!dirItems_[i].isDir) {
-                        if (dirItems_[i].sizeBytes < 1024) {
-                            ImGui::Text("%llu B", static_cast<unsigned long long>(dirItems_[i].sizeBytes));
-                        } else if (dirItems_[i].sizeBytes < 1024 * 1024) {
-                            ImGui::Text("%.1f KB", dirItems_[i].sizeBytes / 1024.0);
-                        } else {
-                            ImGui::Text("%.2f MB", dirItems_[i].sizeBytes / (1024.0 * 1024.0));
-                        }
-                    } else {
-                        ImGui::TextDisabled("—");
-                    }
+                    ImGui::Text("%s", UITheme::formatByteSize(dirItems_[i].sizeBytes).c_str());
                 }
                 ImGui::EndTable();
             }
@@ -178,11 +188,13 @@ void ViewFileEraser::renderDirectoryInspector() {
 void ViewFileEraser::renderActionControls() {
     if (UITheme::beginCard("ActionCtrlCard", "Sanitization Strategy & Verification Preview", "CONFIG", UITheme::COLOR_ORANGE)) {
         ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Certified Sanitization Algorithm:");
+        ImGui::Spacing();
+
         int methodIdx = static_cast<int>(selectedMethod_);
         ImGui::RadioButton("NIST SP 800-88 Rev 1 Clear (Single-Pass 0x00) [Standard]", &methodIdx, 0);
-        ImGui::SameLine();
+        ImGui::Spacing();
         ImGui::RadioButton("DoD 5220.22-M 3-Pass (0x00, 0xFF, PRNG)", &methodIdx, 1);
-        ImGui::SameLine();
+        ImGui::Spacing();
         ImGui::RadioButton("Cryptographic PRNG Random Fill", &methodIdx, 2);
         selectedMethod_ = static_cast<forensivault::api::EraseMethod>(methodIdx);
 
@@ -229,11 +241,7 @@ void ViewFileEraser::renderPreviewCard() {
         UITheme::renderMetricTile("Total Folders", totalDirsStr.c_str(), "Directory entries", UITheme::COLOR_BLUE, -1);
 
         ImGui::NextColumn();
-
-        double mb = static_cast<double>(previewReport_.totalBytes) / (1024.0 * 1024.0);
-        std::stringstream ssMb;
-        ssMb << std::fixed << std::setprecision(2) << mb << " MB";
-        UITheme::renderMetricTile("Total Payload", ssMb.str().c_str(), "Unallocated blocks", UITheme::COLOR_ORANGE, -1);
+        UITheme::renderMetricTile("Total Payload", UITheme::formatByteSize(previewReport_.totalBytes).c_str(), "Unallocated blocks", UITheme::COLOR_ORANGE, -1);
 
         ImGui::NextColumn();
 
@@ -254,27 +262,53 @@ void ViewFileEraser::renderProgressCard() {
 }
 
 void ViewFileEraser::renderResultsCard() {
+    uint64_t erasedFiles = 0;
+    uint64_t erasedDirs = 0;
+    uint64_t erasedBytes = 0;
+    int passes = 0;
+    std::string sig;
+    std::vector<std::string> errs;
+
+    {
+        std::lock_guard<std::mutex> lock(resultsMutex_);
+        erasedFiles = totalErasedFiles_;
+        erasedDirs = totalErasedDirs_;
+        erasedBytes = totalErasedBytes_;
+        passes = maxPassesCompleted_;
+        sig = lastAuditSignature_;
+        errs = executionErrors_;
+    }
+
     if (UITheme::beginCard("ResultsCard", "Sanitization Execution Summary",
-                           executionErrors_.empty() ? "COMPLETED & VERIFIED" : "WARNINGS DETECTED",
-                           executionErrors_.empty() ? UITheme::COLOR_GREEN : UITheme::COLOR_RED)) {
-        if (executionErrors_.empty()) {
+                           errs.empty() ? "COMPLETED & VERIFIED" : "WARNINGS DETECTED",
+                           errs.empty() ? UITheme::COLOR_GREEN : UITheme::COLOR_RED)) {
+        if (errs.empty()) {
             UITheme::renderSuccessBanner("All targeted data blocks overwritten and directory metadata entries scrambled.");
         } else {
-            std::string errSummary = std::to_string(executionErrors_.size()) + " target(s) encountered errors.";
+            std::string errSummary = std::to_string(errs.size()) + " target(s) encountered errors.";
             UITheme::renderDangerBanner(errSummary.c_str());
         }
 
         ImGui::Columns(3, nullptr, false);
-        ImGui::Text("Files Erased:       %llu", static_cast<unsigned long long>(totalErasedFiles_));
-        ImGui::Text("Folders Unlinked:   %llu", static_cast<unsigned long long>(totalErasedDirs_));
+        UITheme::renderWrappedText("Files Erased:", UITheme::COLOR_TEXT_MUTED);
+        UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "%llu files", static_cast<unsigned long long>(erasedFiles));
+        ImGui::Spacing();
+        UITheme::renderWrappedText("Folders Unlinked:", UITheme::COLOR_TEXT_MUTED);
+        UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "%llu dirs", static_cast<unsigned long long>(erasedDirs));
+
         ImGui::NextColumn();
-        double mb = static_cast<double>(totalErasedBytes_) / (1024.0 * 1024.0);
-        ImGui::Text("Bytes Cleared:      %.2f MB", mb);
-        ImGui::Text("Passes Completed:   %d", maxPassesCompleted_);
+        UITheme::renderWrappedText("Bytes Cleared:", UITheme::COLOR_TEXT_MUTED);
+        UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "%s", UITheme::formatByteSize(erasedBytes).c_str());
+        ImGui::Spacing();
+        UITheme::renderWrappedText("Passes Completed:", UITheme::COLOR_TEXT_MUTED);
+        UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "%d passes", passes);
+
         ImGui::NextColumn();
-        if (!lastAuditSignature_.empty()) {
-            ImGui::Text("Audit Record:       [LOGGED]");
-            ImGui::TextDisabled("Signature: %s", lastAuditSignature_.substr(0, 16).c_str());
+        if (!sig.empty()) {
+            UITheme::renderWrappedText("Audit Record:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedText("[LOGGED IN AUDIT CHAIN]", UITheme::COLOR_GREEN);
+            ImGui::Spacing();
+            UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_MUTED, "Sig: %s...", sig.substr(0, 16).c_str());
         }
         ImGui::Columns(1);
     }
@@ -313,12 +347,16 @@ void ViewFileEraser::renderConfirmationModal() {
 
         if (UITheme::renderDestructiveButton("PERMANENTLY DESTROY DATA", ImVec2(240, 38))) {
             showConfirmModal_ = false;
-            hasFinishedResult_ = false;
-            executionErrors_.clear();
-            totalErasedFiles_ = 0;
-            totalErasedDirs_ = 0;
-            totalErasedBytes_ = 0;
-            maxPassesCompleted_ = 0;
+            hasFinishedResult_.store(false);
+            {
+                std::lock_guard<std::mutex> lock(resultsMutex_);
+                executionErrors_.clear();
+                totalErasedFiles_ = 0;
+                totalErasedDirs_ = 0;
+                totalErasedBytes_ = 0;
+                maxPassesCompleted_ = 0;
+                lastAuditSignature_.clear();
+            }
 
             std::vector<fs::path> targetsToErase;
             if (isDirectory_ && !sanitizeEntireDirectory_) {
@@ -342,6 +380,13 @@ void ViewFileEraser::renderConfirmationModal() {
 
             taskRunner_.run([this, targetsToErase, method, targetSource]() {
                 size_t totalTargets = targetsToErase.size();
+                uint64_t erasedFilesAcc = 0;
+                uint64_t erasedDirsAcc = 0;
+                uint64_t erasedBytesAcc = 0;
+                int maxPassesAcc = 0;
+                std::string lastSigAcc;
+                std::vector<std::string> errsAcc;
+
                 for (size_t targetIdx = 0; targetIdx < totalTargets; ++targetIdx) {
                     const auto& targetItem = targetsToErase[targetIdx];
                     std::error_code itemEc;
@@ -366,22 +411,32 @@ void ViewFileEraser::renderConfirmationModal() {
                     }
 
                     if (res.success) {
-                        totalErasedFiles_ += res.filesErased;
-                        totalErasedDirs_ += res.directoriesErased;
-                        totalErasedBytes_ += res.bytesErased;
-                        maxPassesCompleted_ = std::max(maxPassesCompleted_, res.passesCompleted);
-                        lastAuditSignature_ = res.auditSignature;
+                        erasedFilesAcc += res.filesErased;
+                        erasedDirsAcc += res.directoriesErased;
+                        erasedBytesAcc += res.bytesErased;
+                        maxPassesAcc = std::max(maxPassesAcc, res.passesCompleted);
+                        lastSigAcc = res.auditSignature;
                     } else {
-                        executionErrors_.push_back(targetItem.filename().string() + ": " + res.errorMessage);
+                        errsAcc.push_back(targetItem.filename().string() + ": " + res.errorMessage);
                     }
                 }
 
-                hasFinishedResult_ = true;
-                AppContext::getInstance().totalFilesErased += totalErasedFiles_;
+                {
+                    std::lock_guard<std::mutex> lock(resultsMutex_);
+                    totalErasedFiles_ = erasedFilesAcc;
+                    totalErasedDirs_ = erasedDirsAcc;
+                    totalErasedBytes_ = erasedBytesAcc;
+                    maxPassesCompleted_ = maxPassesAcc;
+                    lastAuditSignature_ = lastSigAcc;
+                    executionErrors_ = errsAcc;
+                }
 
-                bool allOk = executionErrors_.empty();
-                std::string summary = "Erased " + std::to_string(totalErasedFiles_) + " files (" +
-                                      std::to_string(totalErasedBytes_ / (1024 * 1024)) + " MB).";
+                hasFinishedResult_.store(true);
+                AppContext::getInstance().totalFilesErased += erasedFilesAcc;
+
+                bool allOk = errsAcc.empty();
+                std::string summary = "Erased " + std::to_string(erasedFilesAcc) + " files (" +
+                                      UITheme::formatByteSize(erasedBytesAcc) + ").";
                 AppContext::getInstance().currentOperation.finish(allOk, summary);
 
                 if (allOk) {
@@ -390,7 +445,7 @@ void ViewFileEraser::renderConfirmationModal() {
                 } else {
                     AppContext::getInstance().postNotification(
                         Notification::Type::FAILURE, "Sanitization Errors",
-                        std::to_string(executionErrors_.size()) + " target(s) failed.");
+                        std::to_string(errsAcc.size()) + " target(s) failed.");
                 }
             });
         }

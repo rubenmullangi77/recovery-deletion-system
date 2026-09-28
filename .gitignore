@@ -49,8 +49,4 @@ Thumbs.db
 # IDE & Editor Configurations
 .vscode/
 imgui.ini
-
-# Node.js / Electron
-node_modules/
-dist/
-*.log
+

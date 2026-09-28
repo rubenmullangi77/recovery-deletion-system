@@ -11,6 +11,7 @@ public:
     void render();
 
 private:
+    void renderThemeSettings();
     void renderComplianceSpecs();
     void renderSecurityContext();
     void renderCryptoBenchmark();

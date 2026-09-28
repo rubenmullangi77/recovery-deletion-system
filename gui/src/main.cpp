@@ -14,6 +14,8 @@
 #include "view_drive_sanitizer.hpp"
 #include "view_carver.hpp"
 #include "view_fs_recovery.hpp"
+#include "view_directory_recovery.hpp"
+
 #include "view_disk_inspect.hpp"
 #include "view_device_detector.hpp"
 #include "view_benchmark.hpp"
@@ -68,11 +70,19 @@ int main(int argc, char* argv[]) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    // Load Crisp High-DPI Fonts (Segoe UI on Windows, DejaVu on Linux)
-    forensivault::gui::UITheme::loadFonts(io);
+    // Query display DPI content scale (for 1080p, 1440p, 4K crisp rendering)
+    float xscale = 1.0f, yscale = 1.0f;
+    glfwGetWindowContentScale(window, &xscale, &yscale);
+    float dpiScale = (xscale > 0.0f) ? xscale : 1.0f;
+
+    // Load Crisp High-DPI Modern Fonts (Roboto-Medium + Monospace + System TrueType)
+    forensivault::gui::UITheme::loadFonts(io, dpiScale);
 
     // Apply ForensiVault Neumorphic Cream & Orange theme
     forensivault::gui::UITheme::applyNeumorphicCreamTheme();
+    if (dpiScale > 1.05f) {
+        ImGui::GetStyle().ScaleAllSizes(dpiScale);
+    }
 
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -91,6 +101,7 @@ int main(int argc, char* argv[]) {
     forensivault::gui::ViewDriveSanitizer viewDriveSanitizer;
     forensivault::gui::ViewCarver viewCarver;
     forensivault::gui::ViewFsRecovery viewFsRecovery;
+    forensivault::gui::ViewDirectoryRecovery viewDirectoryRecovery;
     forensivault::gui::ViewDiskInspect viewDiskInspect;
     forensivault::gui::ViewDeviceDetector viewDeviceDetector;
     forensivault::gui::ViewAuditLog viewAuditLog;
@@ -114,58 +125,130 @@ int main(int argc, char* argv[]) {
                                        ImGuiWindowFlags_NoResize |
                                        ImGuiWindowFlags_NoMove |
                                        ImGuiWindowFlags_NoBringToFrontOnFocus |
-                                       ImGuiWindowFlags_NoNavFocus;
+                                       ImGuiWindowFlags_NoNavFocus |
+                                       ImGuiWindowFlags_NoScrollbar |
+                                       ImGuiWindowFlags_NoScrollWithMouse;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 14.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20.0f, 16.0f));
         ImGui::Begin("MainWindow", nullptr, windowFlags);
         ImGui::PopStyleVar(3);
 
         // -------------------------------------------------------------
-        // 1. Top Header Bar (Neumorphic Soft Header)
+        // 1. Top Header Navbar (Elevated Neumorphic Brand Container)
         // -------------------------------------------------------------
-        if (forensivault::gui::UITheme::fontHeader) ImGui::PushFont(forensivault::gui::UITheme::fontHeader);
-        ImGui::TextColored(forensivault::gui::UITheme::COLOR_ORANGE, "FORENSIVAULT");
-        if (forensivault::gui::UITheme::fontHeader) ImGui::PopFont();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, forensivault::gui::UITheme::COLOR_CREAM_CARD);
+        ImGui::PushStyleColor(ImGuiCol_Border, forensivault::gui::UITheme::COLOR_CARD_BORDER);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f, 11.0f));
 
-        ImGui::SameLine();
-        ImGui::TextColored(forensivault::gui::UITheme::COLOR_TEXT_SECONDARY, "•  Forensic Data Recovery & Certified Sanitization Platform");
+        float headerBarHeight = std::max(56.0f, ImGui::GetFontSize() * 3.2f);
+        ImGui::BeginChild("TopNavbar", ImVec2(0, headerBarHeight), true,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-        // Status Badges on the right
-        float rightEdge = ImGui::GetWindowWidth();
-        float badgeStart = rightEdge - 520.0f;
-        if (badgeStart < 600.0f) badgeStart = 600.0f;
-        ImGui::SameLine(badgeStart);
-
-        // Active operation indicator
+        // Measure Right Status & Actions Area upfront to guarantee zero collision
+        float rightItemsWidth = 0.0f;
+        std::string opText;
         if (appCtx.currentOperation.isRunning) {
             std::stringstream opSs;
             opSs << "[RUNNING " << std::fixed << std::setprecision(0)
                  << (appCtx.currentOperation.progress * 100.0f) << "%]";
-            forensivault::gui::UITheme::renderBadge(opSs.str().c_str(), forensivault::gui::UITheme::COLOR_ORANGE);
+            opText = opSs.str();
+            rightItemsWidth += ImGui::CalcTextSize(opText.c_str()).x + 32.0f;
+        }
+
+        std::string platBadge = "[" + appCtx.platformName + "]";
+        rightItemsWidth += ImGui::CalcTextSize(platBadge.c_str()).x + 32.0f;
+
+        const char* elevBadge = appCtx.isElevated ? "[ELEVATED - ADMIN]" : "[STANDARD USER]";
+        rightItemsWidth += ImGui::CalcTextSize(elevBadge).x + 32.0f;
+
+        const char* elevateBtnText = "Unlock Root / Admin...";
+        float elevateBtnWidth = 0.0f;
+        if (!appCtx.isElevated) {
+            elevateBtnWidth = ImGui::CalcTextSize(elevateBtnText).x + 28.0f;
+            rightItemsWidth += elevateBtnWidth + 12.0f;
+        }
+
+        float availableW = ImGui::GetWindowWidth();
+        float targetX = availableW - rightItemsWidth - 22.0f;
+
+        // A. Left Brand Area
+        forensivault::gui::UITheme::renderBadge("FV", forensivault::gui::UITheme::COLOR_ORANGE);
+        ImGui::SameLine(0.0f, 12.0f);
+
+        if (forensivault::gui::UITheme::fontHeader) ImGui::PushFont(forensivault::gui::UITheme::fontHeader);
+        ImGui::TextColored(forensivault::gui::UITheme::COLOR_TEXT_PRIMARY, "FORENSIVAULT");
+        if (forensivault::gui::UITheme::fontHeader) ImGui::PopFont();
+
+        float leftX = ImGui::GetCursorPosX();
+        float spaceRemaining = targetX - leftX - 16.0f;
+
+        const char* fullTagline = "Forensic Recovery & Certified Sanitization Platform";
+        float fullTaglineW = ImGui::CalcTextSize(fullTagline).x + 30.0f;
+
+        if (spaceRemaining >= fullTaglineW) {
+            ImGui::SameLine(0.0f, 12.0f);
+            ImGui::TextColored(forensivault::gui::UITheme::COLOR_TEXT_MUTED, "•");
+            ImGui::SameLine(0.0f, 12.0f);
+            ImGui::TextColored(forensivault::gui::UITheme::COLOR_TEXT_SECONDARY, "%s", fullTagline);
+        } else if (spaceRemaining >= 180.0f) {
+            ImGui::SameLine(0.0f, 12.0f);
+            ImGui::TextColored(forensivault::gui::UITheme::COLOR_TEXT_MUTED, "•");
+            ImGui::SameLine(0.0f, 12.0f);
+            ImGui::TextColored(forensivault::gui::UITheme::COLOR_TEXT_SECONDARY, "Forensic Workstation");
+        }
+
+        if (targetX > ImGui::GetCursorPosX() + 16.0f) {
+            ImGui::SameLine(targetX);
+        } else {
             ImGui::SameLine();
         }
 
-        // Platform badge
-        std::string platBadge = "[" + appCtx.platformName + "]";
-        forensivault::gui::UITheme::renderBadge(platBadge.c_str(), forensivault::gui::UITheme::COLOR_BLUE);
+        // Render Active operation indicator
+        if (appCtx.currentOperation.isRunning) {
+            forensivault::gui::UITheme::renderBadge(opText.c_str(), forensivault::gui::UITheme::COLOR_ORANGE);
+            ImGui::SameLine(0.0f, 8.0f);
+        }
 
-        ImGui::SameLine();
-        // Elevation badge
+        // Render Platform badge
+        forensivault::gui::UITheme::renderBadge(platBadge.c_str(), forensivault::gui::UITheme::COLOR_BLUE);
+        ImGui::SameLine(0.0f, 8.0f);
+
+        // Render Elevation badge
         if (appCtx.isElevated) {
-            forensivault::gui::UITheme::renderBadge("[ELEVATED - ADMIN]", forensivault::gui::UITheme::COLOR_GREEN);
+            forensivault::gui::UITheme::renderBadge(elevBadge, forensivault::gui::UITheme::COLOR_GREEN);
         } else {
-            forensivault::gui::UITheme::renderBadge("[STANDARD USER]", forensivault::gui::UITheme::COLOR_YELLOW);
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Elevate...")) {
+            forensivault::gui::UITheme::renderBadge(elevBadge, forensivault::gui::UITheme::COLOR_YELLOW);
+            ImGui::SameLine(0.0f, 10.0f);
+
+            // Styled Neumorphic "Unlock Root / Admin..." Button
+            ImGui::PushStyleColor(ImGuiCol_Button, forensivault::gui::UITheme::COLOR_ORANGE_TINT);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, forensivault::gui::UITheme::COLOR_ORANGE);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, forensivault::gui::UITheme::COLOR_ORANGE_ACTIVE);
+            ImGui::PushStyleColor(ImGuiCol_Border, forensivault::gui::UITheme::COLOR_ORANGE);
+            ImGui::PushStyleColor(ImGuiCol_Text, forensivault::gui::UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 4.0f));
+
+            if (forensivault::gui::UITheme::fontBold) ImGui::PushFont(forensivault::gui::UITheme::fontBold);
+            if (ImGui::Button(elevateBtnText, ImVec2(elevateBtnWidth, 28.0f))) {
                 appCtx.requestElevation();
             }
+            if (forensivault::gui::UITheme::fontBold) ImGui::PopFont();
+
+            ImGui::PopStyleVar(3);
+            ImGui::PopStyleColor(5);
         }
 
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
+        ImGui::EndChild();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(2);
+
+        ImGui::Dummy(ImVec2(0, 10.0f));
 
         // -------------------------------------------------------------
         // 2. Notifications Row
@@ -175,26 +258,26 @@ int main(int argc, char* argv[]) {
         // -------------------------------------------------------------
         // 3. Navigation Sidebar + Main Workspace View
         // -------------------------------------------------------------
-        float sidebarWidth = 275.0f;
+        float sidebarWidth = 280.0f;
         float contentHeight = ImGui::GetContentRegionAvail().y - 32.0f;
 
         // Sidebar
         ImGui::PushStyleColor(ImGuiCol_ChildBg, forensivault::gui::UITheme::COLOR_CREAM_CARD);
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 9.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f, 12.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 14.0f));
         ImGui::BeginChild("Sidebar", ImVec2(sidebarWidth, contentHeight), true);
 
         auto renderNavSectionTitle = [](const char* title, const ImVec4& color = forensivault::gui::UITheme::COLOR_TEXT_MUTED) {
-            ImGui::Spacing();
+            ImGui::Dummy(ImVec2(0, 6.0f));
             if (forensivault::gui::UITheme::fontSmall) ImGui::PushFont(forensivault::gui::UITheme::fontSmall);
             ImGui::TextColored(color, "%s", title);
             if (forensivault::gui::UITheme::fontSmall) ImGui::PopFont();
-            ImGui::Spacing();
+            ImGui::Dummy(ImVec2(0, 4.0f));
         };
 
         auto renderNavButton = [&](const char* label, forensivault::gui::ModuleTab tab, const ImVec4& activeCol = forensivault::gui::UITheme::COLOR_ORANGE) {
             bool isActive = (appCtx.activeTab == tab);
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
 
             if (isActive) {
                 ImGui::PushStyleColor(ImGuiCol_Button, activeCol);
@@ -212,7 +295,7 @@ int main(int argc, char* argv[]) {
                 ImGui::PushFont(forensivault::gui::UITheme::fontBold);
             }
 
-            if (ImGui::Button(label, ImVec2(-1, 35))) {
+            if (ImGui::Button(label, ImVec2(-1, 38))) {
                 appCtx.activeTab = tab;
             }
 
@@ -222,7 +305,7 @@ int main(int argc, char* argv[]) {
 
             ImGui::PopStyleColor(4);
             ImGui::PopStyleVar();
-            ImGui::Spacing();
+            ImGui::Dummy(ImVec2(0, 2.0f));
         };
 
         renderNavSectionTitle("WORKSTATION & MONITOR");
@@ -230,7 +313,8 @@ int main(int argc, char* argv[]) {
         renderNavButton("Scan / Operation Progress", forensivault::gui::ModuleTab::OPERATION_PROGRESS);
 
         renderNavSectionTitle("RECOVERY DOMAIN (PRESERVE)", forensivault::gui::UITheme::COLOR_BLUE);
-        renderNavButton("Filesystem Recovery", forensivault::gui::ModuleTab::FS_RECOVERY, forensivault::gui::UITheme::COLOR_BLUE);
+        renderNavButton("Deleted File & Folder Recovery", forensivault::gui::ModuleTab::DIRECTORY_RECOVERY, forensivault::gui::UITheme::COLOR_BLUE);
+        renderNavButton("Forensic Disk Image Recovery", forensivault::gui::ModuleTab::FS_RECOVERY, forensivault::gui::UITheme::COLOR_BLUE);
         renderNavButton("Raw File Carving", forensivault::gui::ModuleTab::FILE_CARVER, forensivault::gui::UITheme::COLOR_BLUE);
         renderNavButton("Recovered Files Browser", forensivault::gui::ModuleTab::RECOVERED_FILES, forensivault::gui::UITheme::COLOR_BLUE);
         renderNavButton("Evidence Geometry & Hashes", forensivault::gui::ModuleTab::DISK_INSPECT, forensivault::gui::UITheme::COLOR_BLUE);
@@ -250,15 +334,18 @@ int main(int argc, char* argv[]) {
 
         ImGui::SameLine();
 
-        // Content Area
+        // Content Area - Single Unified Scrolling Surface
         ImGui::PushStyleColor(ImGuiCol_ChildBg, forensivault::gui::UITheme::COLOR_CREAM_CARD);
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 9.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f, 16.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 22.0f));
         ImGui::BeginChild("ContentArea", ImVec2(0, contentHeight), true);
 
         switch (appCtx.activeTab) {
             case forensivault::gui::ModuleTab::DASHBOARD:
                 viewDashboard.render();
+                break;
+            case forensivault::gui::ModuleTab::DIRECTORY_RECOVERY:
+                viewDirectoryRecovery.render();
                 break;
             case forensivault::gui::ModuleTab::OPERATION_PROGRESS:
                 viewOperationProgress.render();
@@ -313,12 +400,14 @@ int main(int argc, char* argv[]) {
 
         ImGui::End();
 
-        // Rendering with warm linen cream clear color
+        // Rendering with active theme background clear color
         ImGui::Render();
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
-        glClearColor(0.955f, 0.940f, 0.918f, 1.0f);
+        glClearColor(forensivault::gui::UITheme::COLOR_CREAM_BG.x,
+                     forensivault::gui::UITheme::COLOR_CREAM_BG.y,
+                     forensivault::gui::UITheme::COLOR_CREAM_BG.z, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

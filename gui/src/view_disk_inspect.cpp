@@ -174,8 +174,8 @@ void ViewDiskInspect::renderGeometry() {
         } else {
             UITheme::renderBadge("NON-MBR BOOT SECTOR", UITheme::COLOR_YELLOW);
         }
-        ImGui::SameLine();
-        ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY, "%s", geomSector0Desc_.c_str());
+        ImGui::Spacing();
+        UITheme::renderWrappedText(geomSector0Desc_.c_str(), UITheme::COLOR_TEXT_SECONDARY);
     }
     UITheme::endCard();
 }
@@ -185,17 +185,15 @@ void ViewDiskInspect::renderHashes() {
         UITheme::renderSuccessBanner("Read-only streaming hash completed. Evidence integrity verified.");
 
         ImGui::Spacing();
-        ImGui::Text("SHA-256 Fingerprint:");
-        ImGui::SameLine();
+        UITheme::renderWrappedText("SHA-256 Fingerprint:", UITheme::COLOR_TEXT_MUTED);
         if (UITheme::fontMono) ImGui::PushFont(UITheme::fontMono);
-        ImGui::TextColored(UITheme::COLOR_ORANGE, "%s", sha256Hash_.c_str());
+        UITheme::renderWrappedText(sha256Hash_.c_str(), UITheme::COLOR_ORANGE);
         if (UITheme::fontMono) ImGui::PopFont();
 
         ImGui::Spacing();
-        ImGui::Text("MD5 Fingerprint:    ");
-        ImGui::SameLine();
+        UITheme::renderWrappedText("MD5 Fingerprint:", UITheme::COLOR_TEXT_MUTED);
         if (UITheme::fontMono) ImGui::PushFont(UITheme::fontMono);
-        ImGui::TextColored(UITheme::COLOR_BLUE, "%s", md5Hash_.c_str());
+        UITheme::renderWrappedText(md5Hash_.c_str(), UITheme::COLOR_BLUE);
         if (UITheme::fontMono) ImGui::PopFont();
     }
     UITheme::endCard();

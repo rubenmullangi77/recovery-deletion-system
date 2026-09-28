@@ -78,14 +78,15 @@ std::unique_ptr<filesystem::FilesystemAnalyzer> RecoveryEngine::detectFilesystem
 
 RecoveryReport RecoveryEngine::runRecovery(core::DiskImageReader& reader,
                                           const std::string& outputDir,
-                                          const CaseContext& ctx) {
+                                          const CaseContext& ctx,
+                                          uint64_t partitionStartSector) {
     RecoveryReport report;
     report.evidence_image_path = reader.filepath();
 
     // 1. Compute Pre-Recovery Evidence Hash (Proof of evidence state before recovery)
     report.evidence_pre_hash = computeReaderSha256(reader);
 
-    auto analyzer = detectFilesystem(reader, 0);
+    auto analyzer = detectFilesystem(reader, partitionStartSector);
     std::vector<std::pair<uint64_t, uint64_t>> recoveredRanges; // Byte offset, size
 
     if (analyzer) {

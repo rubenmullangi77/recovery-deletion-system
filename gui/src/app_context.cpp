@@ -5,6 +5,8 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
 
 namespace forensivault::gui {
 
@@ -75,6 +77,48 @@ AppContext& AppContext::getInstance() {
     return instance;
 }
 
+std::string AppContext::getSettingsFilePath() const {
+    std::string homeDir = forensivault::core::Platform::getUserHomeDirectory();
+    std::filesystem::path configDir = std::filesystem::path(homeDir) / ".config" / "forensivault";
+    return (configDir / "settings.json").string();
+}
+
+void AppContext::loadSettings() {
+    std::string settingsPath = getSettingsFilePath();
+    std::ifstream file(settingsPath);
+    if (!file.is_open()) {
+        saveSettings();
+        return;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.find("\"theme\"") != std::string::npos || line.find("\"isDarkTheme\"") != std::string::npos) {
+            if (line.find("\"dark\"") != std::string::npos || line.find("true") != std::string::npos) {
+                isDarkTheme = true;
+            } else if (line.find("\"light\"") != std::string::npos || line.find("false") != std::string::npos) {
+                isDarkTheme = false;
+            }
+        }
+    }
+}
+
+void AppContext::saveSettings() {
+    std::string settingsPath = getSettingsFilePath();
+    std::filesystem::path path(settingsPath);
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+
+    std::ofstream file(settingsPath);
+    if (!file.is_open()) return;
+
+    file << "{\n";
+    file << "  \"version\": 1,\n";
+    file << "  \"theme\": \"" << (isDarkTheme ? "dark" : "light") << "\",\n";
+    file << "  \"isDarkTheme\": " << (isDarkTheme ? "true" : "false") << "\n";
+    file << "}\n";
+}
+
 void AppContext::initialize() {
     isElevated = forensivault::core::Platform::isElevated();
 #if defined(_WIN32)
@@ -85,6 +129,14 @@ void AppContext::initialize() {
     platformName = "POSIX Generic";
 #endif
     currentOperation.reset();
+    loadSettings();
+    UITheme::applyTheme(isDarkTheme);
+}
+
+void AppContext::setDarkTheme(bool dark) {
+    isDarkTheme = dark;
+    UITheme::applyTheme(dark);
+    saveSettings();
 }
 
 void AppContext::registerCarvedFile(const std::string& filename, const std::string& fullPath,
@@ -105,8 +157,14 @@ void AppContext::registerCarvedFile(const std::string& filename, const std::stri
     file.source = "CARVER";
 
     auto t = std::time(nullptr);
+    std::tm tmBuf{};
+#if defined(_WIN32)
+    gmtime_s(&tmBuf, &t);
+#else
+    gmtime_r(&t, &tmBuf);
+#endif
     std::stringstream ss;
-    ss << std::put_time(std::gmtime(&t), "%Y-%m-%d %H:%M:%S UTC");
+    ss << std::put_time(&tmBuf, "%Y-%m-%d %H:%M:%S UTC");
     file.timestamp = ss.str();
 
     recoveredFilesRegistry.push_back(file);
@@ -142,6 +200,7 @@ void AppContext::registerFsFile(const std::string& filename, const std::string& 
 }
 
 void AppContext::postNotification(Notification::Type type, const std::string& title, const std::string& message) {
+    std::lock_guard<std::mutex> lock(notificationsMutex_);
     Notification n;
     n.type = type;
     n.title = title;
@@ -151,7 +210,9 @@ void AppContext::postNotification(Notification::Type type, const std::string& ti
 }
 
 void AppContext::renderNotifications() {
+    std::lock_guard<std::mutex> lock(notificationsMutex_);
     auto now = std::chrono::steady_clock::now();
+    size_t notifIndex = 0;
     for (auto it = notifications_.begin(); it != notifications_.end(); ) {
         float elapsed = std::chrono::duration<float>(now - it->timestamp).count();
         if (elapsed > it->durationSeconds) {
@@ -177,7 +238,7 @@ void AppContext::renderNotifications() {
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 8.0f));
 
-        std::string childId = "Notification_" + it->title + std::to_string(elapsed);
+        std::string childId = "Notification_" + std::to_string(notifIndex++);
         ImGui::BeginChild(childId.c_str(), ImVec2(0, 42), true);
         ImGui::TextColored(col, "%s %s", prefix, it->title.c_str());
         ImGui::SameLine();
@@ -193,7 +254,11 @@ void AppContext::renderNotifications() {
 }
 
 bool AppContext::requestElevation(const std::vector<std::string>& extraArgs) {
-    return forensivault::core::Platform::elevateProcess(extraArgs);
+    bool ok = forensivault::core::Platform::elevateProcess(extraArgs);
+    if (!ok) {
+        postNotification(Notification::Type::WARNING, "Privilege Elevation", "Authorization canceled or declined by user.");
+    }
+    return ok;
 }
 
 } // namespace forensivault::gui

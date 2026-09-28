@@ -2,14 +2,18 @@
 
 #include <imgui.h>
 #include <string>
+#include <cstdint>
 
 namespace forensivault::gui {
 
 class UITheme {
 public:
+    static void applyTheme(bool dark);
     static void applyNeumorphicCreamTheme();
-    static void applyForensicDarkTheme() { applyNeumorphicCreamTheme(); } // Alias for compatibility
-    static void loadFonts(ImGuiIO& io);
+    static void applyDarkTheme();
+    static bool isDarkTheme();
+    static void toggleTheme();
+    static void loadFonts(ImGuiIO& io, float dpiScale = 1.0f);
 
     // Font Pointers
     static ImFont* fontRegular;
@@ -18,34 +22,34 @@ public:
     static ImFont* fontMono;
     static ImFont* fontSmall;
 
-    // Minimalist Cream & Orange Palette Constants
-    static const ImVec4 COLOR_CREAM_BG;        // Base window canvas
-    static const ImVec4 COLOR_CREAM_CARD;      // Elevated neumorphic card surface
-    static const ImVec4 COLOR_CREAM_INSET;     // Sunken wells for inputs & tables
-    static const ImVec4 COLOR_CARD_BORDER;     // Crisp 1px card boundary
-    static const ImVec4 COLOR_SHADOW_LIGHT;    // Soft top-left highlight
-    static const ImVec4 COLOR_SHADOW_DARK;     // Soft bottom-right ambient shadow
+    // Palette Colors (dynamically updated when theme changes)
+    static ImVec4 COLOR_CREAM_BG;        // Base window canvas
+    static ImVec4 COLOR_CREAM_CARD;      // Elevated neumorphic card surface
+    static ImVec4 COLOR_CREAM_INSET;     // Sunken wells for inputs & tables
+    static ImVec4 COLOR_CARD_BORDER;     // Crisp 1px card boundary
+    static ImVec4 COLOR_SHADOW_LIGHT;    // Soft top-left highlight
+    static ImVec4 COLOR_SHADOW_DARK;     // Soft bottom-right ambient shadow
 
-    static const ImVec4 COLOR_ORANGE;          // Radiant warm orange brand accent
-    static const ImVec4 COLOR_ORANGE_HOVER;    // Lighter orange for hover states
-    static const ImVec4 COLOR_ORANGE_ACTIVE;   // Deeper pressed orange
-    static const ImVec4 COLOR_ORANGE_TINT;     // Translucent orange wash for pills & tabs
-    static const ImVec4 COLOR_CYAN;            // Maps to Orange for harmony
+    static ImVec4 COLOR_ORANGE;          // Radiant warm orange brand accent
+    static ImVec4 COLOR_ORANGE_HOVER;    // Lighter orange for hover states
+    static ImVec4 COLOR_ORANGE_ACTIVE;   // Deeper pressed orange
+    static ImVec4 COLOR_ORANGE_TINT;     // Translucent orange wash for pills & tabs
+    static ImVec4 COLOR_CYAN;            // Maps to Orange for harmony
 
-    static const ImVec4 COLOR_TEXT_PRIMARY;    // High-contrast deep espresso (#1C1917)
-    static const ImVec4 COLOR_TEXT_SECONDARY;  // Muted taupe stone (#57534E)
-    static const ImVec4 COLOR_TEXT_MUTED;      // Muted caption (#8A8175)
-    static const ImVec4 COLOR_BG_PANEL;        // Alias for COLOR_CREAM_CARD
+    static ImVec4 COLOR_TEXT_PRIMARY;    // High-contrast deep espresso / clean white
+    static ImVec4 COLOR_TEXT_SECONDARY;  // Muted taupe stone / sleek silver
+    static ImVec4 COLOR_TEXT_MUTED;      // Muted caption / slate
+    static ImVec4 COLOR_BG_PANEL;        // Alias for COLOR_CREAM_CARD
 
     // Semantic Status Colors
-    static const ImVec4 COLOR_GREEN;           // Emerald Forest (#16A34A)
-    static const ImVec4 COLOR_GREEN_TINT;
-    static const ImVec4 COLOR_YELLOW;          // Amber Warning (#D97706)
-    static const ImVec4 COLOR_YELLOW_TINT;
-    static const ImVec4 COLOR_RED;             // Crimson Destructive (#DC2626)
-    static const ImVec4 COLOR_RED_TINT;
-    static const ImVec4 COLOR_BLUE;            // Forensic Info Sky (#0284C7)
-    static const ImVec4 COLOR_BLUE_TINT;
+    static ImVec4 COLOR_GREEN;           // Emerald Forest
+    static ImVec4 COLOR_GREEN_TINT;
+    static ImVec4 COLOR_YELLOW;          // Amber Warning
+    static ImVec4 COLOR_YELLOW_TINT;
+    static ImVec4 COLOR_RED;             // Crimson Destructive
+    static ImVec4 COLOR_RED_TINT;
+    static ImVec4 COLOR_BLUE;            // Forensic Info Sky
+    static ImVec4 COLOR_BLUE_TINT;
 
     // Neumorphic Card & Container Components
     static bool beginCard(const char* cardId, const char* title = nullptr,
@@ -58,6 +62,8 @@ public:
     static void renderSectionHeader(const char* title, const char* subtitle = nullptr);
     static void renderMetricTile(const char* label, const char* value, const char* subtitle = nullptr,
                                  const ImVec4& valueColor = COLOR_ORANGE, float width = 0.0f);
+    static void renderWrappedText(const char* text, const ImVec4& color = COLOR_TEXT_PRIMARY);
+    static void renderWrappedFormatted(const ImVec4& color, const char* fmt, ...);
     static void renderHelpMarker(const char* desc);
 
     // Badges & Pills
@@ -75,10 +81,14 @@ public:
     static void renderProgressBar(float fraction, const char* overlayText, const char* subText = nullptr);
 
     // Alert & Notification Banners
+    static void renderBanner(const char* prefix, const char* message, const ImVec4& textColor, const ImVec4& bgColor, const ImVec4& borderColor);
     static void renderDangerBanner(const char* message);
     static void renderWarningBanner(const char* message);
     static void renderSuccessBanner(const char* message);
     static void renderInfoBanner(const char* message);
+
+    // Formatting Helpers
+    static std::string formatByteSize(uint64_t bytes);
 
     // Card Shadow Effect
     static void renderCardShadow(const ImVec2& minPos, const ImVec2& maxPos, float rounding = 12.0f);

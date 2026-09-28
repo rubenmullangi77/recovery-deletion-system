@@ -36,22 +36,22 @@ void ViewRecoveredFiles::render() {
                            "FORENSIC INVENTORY", UITheme::COLOR_BLUE)) {
         ImGui::Columns(3, nullptr, false);
 
-        ImGui::Text("Search Filename / Ext:");
-        ImGui::SetNextItemWidth(-20);
+        UITheme::renderWrappedText("Search Filename / Ext:", UITheme::COLOR_TEXT_MUTED);
+        ImGui::SetNextItemWidth(-10);
         ImGui::InputText("##SearchRec", searchFilterBuffer_, sizeof(searchFilterBuffer_));
 
         ImGui::NextColumn();
 
-        ImGui::Text("Recovery Discipline:");
+        UITheme::renderWrappedText("Recovery Discipline:", UITheme::COLOR_TEXT_MUTED);
         const char* sources[] = { "All Disciplines", "Raw Data Carver Only", "Filesystem Metadata Only" };
-        ImGui::SetNextItemWidth(-20);
+        ImGui::SetNextItemWidth(-10);
         ImGui::Combo("##SourceCombo", &selectedSourceFilter_, sources, IM_ARRAYSIZE(sources));
 
         ImGui::NextColumn();
 
-        ImGui::Text("File Category:");
+        UITheme::renderWrappedText("File Category:", UITheme::COLOR_TEXT_MUTED);
         const char* types[] = { "All Categories", "PDF Documents", "Office (DOCX/XLSX/OLE)", "Images (JPEG/PNG/GIF)", "Audio/Video Media" };
-        ImGui::SetNextItemWidth(-20);
+        ImGui::SetNextItemWidth(-10);
         ImGui::Combo("##TypeCombo", &selectedTypeFilter_, types, IM_ARRAYSIZE(types));
 
         ImGui::Columns(1);
@@ -143,10 +143,11 @@ void ViewRecoveredFiles::render() {
     }
 
     int tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                     ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY |
-                     ImGuiTableFlags_Sortable;
+                     ImGuiTableFlags_Resizable | ImGuiTableFlags_Sortable;
+    if (filtered.size() > 25) tableFlags |= ImGuiTableFlags_ScrollY;
+    float tableH = (filtered.size() > 25) ? 500.0f : 0.0f;
 
-    if (ImGui::BeginTable("RecoveredFilesTable", 8, tableFlags, ImVec2(0, 380.0f))) {
+    if (ImGui::BeginTable("RecoveredFilesTable", 8, tableFlags, ImVec2(0, tableH))) {
         ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 45.0f);
         ImGui::TableSetupColumn("Discipline", ImGuiTableColumnFlags_WidthFixed, 100.0f);
         ImGui::TableSetupColumn("File Name", ImGuiTableColumnFlags_WidthStretch);

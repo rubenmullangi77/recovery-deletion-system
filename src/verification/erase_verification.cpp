@@ -5,6 +5,8 @@
 #include <vector>
 #include <sstream>
 #include <iomanip>
+#include <cmath>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -67,12 +69,18 @@ sanitization::VerificationResult EraseVerification::verifyOverwrittenFile(
 
     } else if (method == sanitization::SanitizationMethod::DOD_5220_22_M ||
                method == sanitization::SanitizationMethod::PSEUDORANDOM_1_PASS) {
-        // Expected random bytes: entropy should be > 7.5
-        res.is_verified = (res.measured_entropy >= 7.2);
+        // Shannon entropy threshold: for small buffers (< 512 bytes), theoretical maximum entropy
+        // is bounded by log2(N). Dynamically scale minimum required entropy for small files.
+        double minEntropy = (buffer.size() < 512)
+            ? std::max(1.0, std::log2(static_cast<double>(std::max<size_t>(2, buffer.size()))) * 0.70)
+            : 7.2;
+
+        res.is_verified = (res.measured_entropy >= minEntropy);
         res.match_rate_percentage = 100.0; // Statistical check
 
         details << "Pattern verification (Pseudorandom): Measured Entropy: "
-                << std::fixed << std::setprecision(4) << res.measured_entropy << " bits/byte (Expected > 7.2). "
+                << std::fixed << std::setprecision(4) << res.measured_entropy << " bits/byte (Required > "
+                << std::setprecision(2) << minEntropy << "). "
                 << (res.is_verified ? "High entropy randomness verified." : "Entropy too low; possible incomplete overwrite.");
     }
 

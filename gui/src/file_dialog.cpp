@@ -1,4 +1,5 @@
 #include "file_dialog.hpp"
+#include <forensivault/core/platform.hpp>
 
 #include <vector>
 #include <iostream>
@@ -41,6 +42,19 @@ std::string toNarrow(const std::wstring& wstr) {
 // Linux / POSIX implementation using zenity or kdialog
 namespace {
 
+std::string escapeShellArg(const std::string& arg) {
+    std::string escaped = "'";
+    for (char c : arg) {
+        if (c == '\'') {
+            escaped += "'\\''";
+        } else {
+            escaped += c;
+        }
+    }
+    escaped += "'";
+    return escaped;
+}
+
 std::string runCommand(const std::string& cmd) {
     std::array<char, 256> buffer;
     std::string result;
@@ -57,7 +71,7 @@ std::string runCommand(const std::string& cmd) {
 }
 
 bool hasCommand(const std::string& cmd) {
-    std::string check = "which " + cmd + " > /dev/null 2>&1";
+    std::string check = "command -v " + escapeShellArg(cmd) + " > /dev/null 2>&1";
     return system(check.c_str()) == 0;
 }
 
@@ -69,12 +83,18 @@ namespace forensivault::gui {
 std::string FileDialog::openFile(const std::string& title,
                                 const std::string& filterDesc,
                                 const std::string& filterExt) {
+    std::string initialDir = forensivault::core::Platform::getUserHomeDirectory();
+    if (!initialDir.empty() && initialDir.back() != '/' && initialDir.back() != '\\') {
+        initialDir += '/';
+    }
+
 #if defined(_WIN32)
     wchar_t filename[MAX_PATH] = { 0 };
 
     std::wstring wTitle = toWide(title);
     std::wstring wDesc = toWide(filterDesc);
     std::wstring wExt = toWide(filterExt);
+    std::wstring wInitDir = toWide(initialDir);
 
     // Format filter: "Description\0Extension\0\0"
     std::vector<wchar_t> filter;
@@ -93,6 +113,7 @@ std::string FileDialog::openFile(const std::string& title,
     ofn.lpstrFilter = filter.data();
     ofn.nFilterIndex = 1;
     ofn.lpstrTitle = wTitle.c_str();
+    ofn.lpstrInitialDir = wInitDir.c_str();
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
 
     if (GetOpenFileNameW(&ofn)) {
@@ -101,10 +122,10 @@ std::string FileDialog::openFile(const std::string& title,
     return "";
 #else
     if (hasCommand("zenity")) {
-        std::string cmd = "zenity --file-selection --title=\"" + title + "\" 2>/dev/null";
+        std::string cmd = "zenity --file-selection --filename=" + escapeShellArg(initialDir) + " --title=" + escapeShellArg(title) + " 2>/dev/null";
         return runCommand(cmd);
     } else if (hasCommand("kdialog")) {
-        std::string cmd = "kdialog --getopenfilename . --title \"" + title + "\" 2>/dev/null";
+        std::string cmd = "kdialog --getopenfilename " + escapeShellArg(initialDir) + " --title " + escapeShellArg(title) + " 2>/dev/null";
         return runCommand(cmd);
     }
     return "";
@@ -112,6 +133,11 @@ std::string FileDialog::openFile(const std::string& title,
 }
 
 std::string FileDialog::openFolder(const std::string& title) {
+    std::string initialDir = forensivault::core::Platform::getUserHomeDirectory();
+    if (!initialDir.empty() && initialDir.back() != '/' && initialDir.back() != '\\') {
+        initialDir += '/';
+    }
+
 #if defined(_WIN32)
     HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     bool needCoUninit = SUCCEEDED(hr);
@@ -125,6 +151,13 @@ std::string FileDialog::openFolder(const std::string& title) {
         }
         std::wstring wTitle = toWide(title);
         pFileOpen->SetTitle(wTitle.c_str());
+
+        std::wstring wInitDir = toWide(initialDir);
+        IShellItem* pFolderItem = nullptr;
+        if (SUCCEEDED(SHCreateItemFromParsingName(wInitDir.c_str(), nullptr, IID_PPV_ARGS(&pFolderItem)))) {
+            pFileOpen->SetFolder(pFolderItem);
+            pFolderItem->Release();
+        }
 
         hr = pFileOpen->Show(nullptr);
         if (SUCCEEDED(hr)) {
@@ -169,10 +202,10 @@ std::string FileDialog::openFolder(const std::string& title) {
     return "";
 #else
     if (hasCommand("zenity")) {
-        std::string cmd = "zenity --file-selection --directory --title=\"" + title + "\" 2>/dev/null";
+        std::string cmd = "zenity --file-selection --directory --filename=" + escapeShellArg(initialDir) + " --title=" + escapeShellArg(title) + " 2>/dev/null";
         return runCommand(cmd);
     } else if (hasCommand("kdialog")) {
-        std::string cmd = "kdialog --getexistingdirectory . --title \"" + title + "\" 2>/dev/null";
+        std::string cmd = "kdialog --getexistingdirectory " + escapeShellArg(initialDir) + " --title " + escapeShellArg(title) + " 2>/dev/null";
         return runCommand(cmd);
     }
     return "";
@@ -183,6 +216,11 @@ std::string FileDialog::saveFile(const std::string& title,
                                 const std::string& defaultFileName,
                                 const std::string& filterDesc,
                                 const std::string& filterExt) {
+    std::string initialDir = forensivault::core::Platform::getUserHomeDirectory();
+    if (!initialDir.empty() && initialDir.back() != '/' && initialDir.back() != '\\') {
+        initialDir += '/';
+    }
+
 #if defined(_WIN32)
     wchar_t filename[MAX_PATH] = { 0 };
     std::wstring wDefName = toWide(defaultFileName);
@@ -191,6 +229,7 @@ std::string FileDialog::saveFile(const std::string& title,
     std::wstring wTitle = toWide(title);
     std::wstring wDesc = toWide(filterDesc);
     std::wstring wExt = toWide(filterExt);
+    std::wstring wInitDir = toWide(initialDir);
 
     std::vector<wchar_t> filter;
     for (wchar_t c : wDesc) filter.push_back(c);
@@ -208,6 +247,7 @@ std::string FileDialog::saveFile(const std::string& title,
     ofn.lpstrFilter = filter.data();
     ofn.nFilterIndex = 1;
     ofn.lpstrTitle = wTitle.c_str();
+    ofn.lpstrInitialDir = wInitDir.c_str();
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
 
     if (GetSaveFileNameW(&ofn)) {
@@ -215,11 +255,12 @@ std::string FileDialog::saveFile(const std::string& title,
     }
     return "";
 #else
+    std::string startPath = initialDir + defaultFileName;
     if (hasCommand("zenity")) {
-        std::string cmd = "zenity --file-selection --save --confirm-overwrite --filename=\"" + defaultFileName + "\" --title=\"" + title + "\" 2>/dev/null";
+        std::string cmd = "zenity --file-selection --save --confirm-overwrite --filename=" + escapeShellArg(startPath) + " --title=" + escapeShellArg(title) + " 2>/dev/null";
         return runCommand(cmd);
     } else if (hasCommand("kdialog")) {
-        std::string cmd = "kdialog --getsavefilename \"" + defaultFileName + "\" --title \"" + title + "\" 2>/dev/null";
+        std::string cmd = "kdialog --getsavefilename " + escapeShellArg(startPath) + " --title " + escapeShellArg(title) + " 2>/dev/null";
         return runCommand(cmd);
     }
     return "";
@@ -231,7 +272,7 @@ void FileDialog::openFolderInExplorer(const std::string& folderPath) {
     std::wstring wPath = toWide(folderPath);
     ShellExecuteW(nullptr, L"open", wPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #else
-    std::string cmd = "xdg-open \"" + folderPath + "\" 2>/dev/null &";
+    std::string cmd = "xdg-open " + escapeShellArg(folderPath) + " >/dev/null 2>&1 &";
     int ret = std::system(cmd.c_str());
     (void)ret;
 #endif

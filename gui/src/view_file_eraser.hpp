@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <atomic>
+#include <mutex>
 
 namespace forensivault::gui {
 
@@ -54,7 +56,8 @@ private:
     // Background Execution
     AsyncTaskRunner taskRunner_;
     forensivault::api::EraseProgress liveProgress_;
-    bool hasFinishedResult_ = false;
+    std::atomic<bool> hasFinishedResult_{false};
+    std::mutex resultsMutex_;
     forensivault::api::EraseResult finalResult_;
     uint64_t totalErasedFiles_ = 0;
     uint64_t totalErasedDirs_ = 0;

@@ -7,20 +7,20 @@
 The software architecture is decoupled into three distinct tiers:
 1. **High-Performance C++17 Core Engine (`forensivault_core`)**: Headless, zero-overhead static/shared library encapsulating all low-level raw I/O, binary signature detection, structural parsing, cryptographic hashing, and sanitization routines.
 2. **Unified Command-Line & Forensic Terminal (`forensivault_cli`)**: High-efficiency console interface providing scriptable automation, live sector progress monitoring, and interactive terminal workflows.
-3. **Neumorphic Desktop Application (`electron/`)**: Cross-platform desktop interface constructed using Electron, styled with Apple iPhone San Francisco typography and high-contrast neumorphic tactile controls, communicating with the core engine via non-blocking asynchronous IPC stdio streams.
+3. **Hardware-Accelerated Desktop Application (`forensivault-gui`)**: Native C++ desktop interface constructed using Dear ImGui and GLFW/OpenGL, styled with high-DPI modern typography, tactile Neumorphic cream and orange controls, and asynchronous background worker threads.
 
 ```
 +---------------------------------------------------------------------------------+
 |                               Presentation Tier                                 |
 |  +-------------------------------------+   +---------------------------------+  |
-|  |  Electron Neumorphic GUI (HTML5/CSS)|   |  Terminal / Scripting Interface |  |
-|  |  (Cream #F3EFE9 & Orange #FA701F)   |   |  (Interactive CLI Engine)       |  |
+|  |  Native Dear ImGui GUI (C++/OpenGL) |   |  Terminal / Scripting Interface |  |
+|  |  (Cream #F4F0EA & Orange #FA701F)   |   |  (Interactive CLI Engine)       |  |
 |  +------------------+------------------+   +----------------+----------------+  |
 +---------------------|---------------------------------------|-------------------+
-                      | IPC stdio (JSON/Progress Stream)      | Direct Linkage
+                      | Direct C++ API Linkage                | Direct Linkage
                       v                                       v
 +---------------------------------------------------------------------------------+
-|                       ForensiVault CLI / API Gateway                            |
+|                       ForensiVault C++ High-Level API                           |
 |                  (drives, carving, sanitization, reports)                       |
 +---------------------------------------------------------------------------------+
                                       |

@@ -51,9 +51,15 @@ void ViewAuditLog::render() {
             UITheme::renderBadge("TAMPER DETECTED [INVALID HASH]", UITheme::COLOR_RED);
         }
 
-        ImGui::SameLine(ImGui::GetWindowWidth() - 260.0f);
+        float exportBtnW = 220.0f;
+        float targetX = ImGui::GetWindowWidth() - exportBtnW - 24.0f;
+        if (targetX > ImGui::GetCursorPosX() + 16.0f) {
+            ImGui::SameLine(targetX);
+        } else {
+            ImGui::Spacing();
+        }
 
-        if (UITheme::renderPrimaryButton("Export Journal (.jsonl)...", ImVec2(240, 34))) {
+        if (UITheme::renderPrimaryButton("Export Journal (.jsonl)...", ImVec2(exportBtnW, 34))) {
             std::string savePath = FileDialog::saveFile("Export Forensic Audit Journal", "audit_log.jsonl", "JSON Lines (*.jsonl)", "*.jsonl;*.json;*.*");
             if (!savePath.empty()) {
                 if (forensivault::logging::AuditLogger::getInstance().saveToFile(savePath)) {
@@ -83,9 +89,11 @@ void ViewAuditLog::render() {
         ImGui::Spacing();
 
         int flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                    ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY;
+                    ImGuiTableFlags_Resizable;
+        if (entries_.size() > 25) flags |= ImGuiTableFlags_ScrollY;
+        float tableH = (entries_.size() > 25) ? 500.0f : 0.0f;
 
-        if (ImGui::BeginTable("AuditTable", 5, flags, ImVec2(0, 380))) {
+        if (ImGui::BeginTable("AuditTable", 5, flags, ImVec2(0, tableH))) {
             ImGui::TableSetupColumn("Timestamp (UTC)", ImGuiTableColumnFlags_WidthFixed, 180.0f);
             ImGui::TableSetupColumn("Operation", ImGuiTableColumnFlags_WidthFixed, 150.0f);
             ImGui::TableSetupColumn("Target Source", ImGuiTableColumnFlags_WidthStretch);

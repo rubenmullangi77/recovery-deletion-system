@@ -100,12 +100,16 @@ void ViewCarver::renderInputs() {
                     AppContext::getInstance().currentOperation.update(frac, ss.str(), sub.str());
                 };
 
-                finalResult_ = forensivault::api::CarverAPI::carve(img, out, conf, cb);
-                hasResult_ = true;
+                auto res = forensivault::api::CarverAPI::carve(img, out, conf, cb);
+                {
+                    std::lock_guard<std::mutex> lock(resultMutex_);
+                    finalResult_ = res;
+                }
+                hasResult_.store(true);
 
-                if (finalResult_.success) {
+                if (res.success) {
                     // Register carved files in global registry
-                    for (const auto& item : finalResult_.carvedFiles) {
+                    for (const auto& item : res.carvedFiles) {
                         std::string filename = fs::path(item.recoveredFilePath).filename().string();
                         if (filename.empty()) {
                             std::stringstream ss;
@@ -120,15 +124,15 @@ void ViewCarver::renderInputs() {
                             item.lengthBytes, item.confidenceScore, confLevel, item.sha256);
                     }
 
-                    std::string summary = "Successfully carved " + std::to_string(finalResult_.filesSuccessfullyCarved) + " files.";
+                    std::string summary = "Successfully carved " + std::to_string(res.filesSuccessfullyCarved) + " files.";
                     AppContext::getInstance().currentOperation.finish(true, summary);
                     AppContext::getInstance().postNotification(
                         Notification::Type::SUCCESS, "Carving Complete", summary);
                 } else {
-                    AppContext::getInstance().currentOperation.finish(false, finalResult_.errorMessage);
+                    AppContext::getInstance().currentOperation.finish(false, res.errorMessage);
                     AppContext::getInstance().postNotification(
                         Notification::Type::FAILURE, "Carving Failed",
-                        finalResult_.errorMessage);
+                        res.errorMessage);
                 }
             });
         }
@@ -146,24 +150,30 @@ void ViewCarver::renderProgress() {
 }
 
 void ViewCarver::renderSummary() {
+    forensivault::api::CarveSessionResult res;
+    {
+        std::lock_guard<std::mutex> lock(resultMutex_);
+        res = finalResult_;
+    }
+
     if (UITheme::beginCard("CarverSummaryCard", "Carving Session Results",
-                           finalResult_.success ? "SESSION COMPLETE" : "ERRORS DETECTED",
-                           finalResult_.success ? UITheme::COLOR_GREEN : UITheme::COLOR_RED)) {
-        if (finalResult_.success) {
+                           res.success ? "SESSION COMPLETE" : "ERRORS DETECTED",
+                           res.success ? UITheme::COLOR_GREEN : UITheme::COLOR_RED)) {
+        if (res.success) {
             ImGui::Columns(4, nullptr, false);
 
-            std::string discStr = std::to_string(finalResult_.signaturesDiscovered);
+            std::string discStr = std::to_string(res.signaturesDiscovered);
             UITheme::renderMetricTile("Signatures Found", discStr.c_str(), "Signatures identified", UITheme::COLOR_BLUE, -1);
 
             ImGui::NextColumn();
 
-            std::string carvedStr = std::to_string(finalResult_.filesSuccessfullyCarved);
+            std::string carvedStr = std::to_string(res.filesSuccessfullyCarved);
             UITheme::renderMetricTile("Carved & Validated", carvedStr.c_str(), "Boundary resolved", UITheme::COLOR_GREEN, -1);
 
             ImGui::NextColumn();
 
             uint64_t totalBytes = 0;
-            for (const auto& item : finalResult_.carvedFiles) {
+            for (const auto& item : res.carvedFiles) {
                 totalBytes += item.lengthBytes;
             }
             double mb = static_cast<double>(totalBytes) / (1024.0 * 1024.0);
@@ -174,19 +184,24 @@ void ViewCarver::renderSummary() {
             ImGui::NextColumn();
 
             std::stringstream ssDur;
-            ssDur << std::fixed << std::setprecision(2) << finalResult_.durationSeconds << " s";
+            ssDur << std::fixed << std::setprecision(2) << res.durationSeconds << " s";
             UITheme::renderMetricTile("Scan Duration", ssDur.str().c_str(), "Read-only throughput", UITheme::COLOR_TEXT_PRIMARY, -1);
 
             ImGui::Columns(1);
         } else {
-            UITheme::renderDangerBanner(finalResult_.errorMessage.c_str());
+            UITheme::renderDangerBanner(res.errorMessage.c_str());
         }
     }
     UITheme::endCard();
 }
 
 void ViewCarver::renderCarvedTable() {
-    if (finalResult_.carvedFiles.empty()) return;
+    std::vector<forensivault::api::CarvedFileItem> files;
+    {
+        std::lock_guard<std::mutex> lock(resultMutex_);
+        files = finalResult_.carvedFiles;
+    }
+    if (files.empty()) return;
 
     if (UITheme::beginCard("CarvedArtifactsCard", "Extracted Artifacts Table", "DISCOVERED FILES", UITheme::COLOR_BLUE)) {
         ImGui::Text("Filter Extracted Files:");
@@ -202,7 +217,11 @@ void ViewCarver::renderCarvedTable() {
         std::string filterLower = searchFilterBuffer_;
         std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
 
-        if (ImGui::BeginTable("CarverTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY, ImVec2(0, 320))) {
+        ImGuiTableFlags tblFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable;
+        if (files.size() > 25) tblFlags |= ImGuiTableFlags_ScrollY;
+        float tableH = (files.size() > 25) ? 480.0f : 0.0f;
+
+        if (ImGui::BeginTable("CarverTable", 6, tblFlags, ImVec2(0, tableH))) {
             ImGui::TableSetupColumn("Filename", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80.0f);
             ImGui::TableSetupColumn("Offset (Hex)", ImGuiTableColumnFlags_WidthFixed, 120.0f);
@@ -211,7 +230,7 @@ void ViewCarver::renderCarvedTable() {
             ImGui::TableSetupColumn("SHA-256 Hash", ImGuiTableColumnFlags_WidthFixed, 180.0f);
             ImGui::TableHeadersRow();
 
-            for (const auto& item : finalResult_.carvedFiles) {
+            for (const auto& item : files) {
                 std::string fname = fs::path(item.recoveredFilePath).filename().string();
                 if (fname.empty()) {
                     std::stringstream ss;

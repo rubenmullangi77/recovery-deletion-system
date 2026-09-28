@@ -56,25 +56,35 @@ void ViewDeviceDetector::render() {
         if (UITheme::beginCard(cardId.c_str(), dev.deviceId.c_str(), badge, badgeCol)) {
             ImGui::Columns(3, nullptr, false);
 
-            ImGui::Text("Device Model:   %s", dev.model.empty() ? "Generic Storage Block" : dev.model.c_str());
-            ImGui::Text("Hardware Bus:   %s", dev.interfaceType.c_str());
+            UITheme::renderWrappedText("Device Model:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedText(dev.model.empty() ? "Generic Storage Block" : dev.model.c_str(), UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Spacing();
+            UITheme::renderWrappedText("Hardware Bus:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedText(dev.interfaceType.c_str(), UITheme::COLOR_TEXT_PRIMARY);
 
             ImGui::NextColumn();
 
-            ImGui::Text("Media Type:     %s", dev.mediaType.c_str());
+            UITheme::renderWrappedText("Media Type:", UITheme::COLOR_TEXT_MUTED);
+            UITheme::renderWrappedText(dev.mediaType.c_str(), UITheme::COLOR_TEXT_PRIMARY);
+            ImGui::Spacing();
+            UITheme::renderWrappedText("Capacity:", UITheme::COLOR_TEXT_MUTED);
             double gb = static_cast<double>(dev.sizeBytes) / (1024.0 * 1024.0 * 1024.0);
-            ImGui::Text("Capacity:       %.2f GB (%llu bytes)", gb, static_cast<unsigned long long>(dev.sizeBytes));
+            char capBuf[128];
+            snprintf(capBuf, sizeof(capBuf), "%.2f GB (%llu bytes)", gb, static_cast<unsigned long long>(dev.sizeBytes));
+            UITheme::renderWrappedText(capBuf, UITheme::COLOR_TEXT_PRIMARY);
 
             ImGui::NextColumn();
 
             if (dev.isSafeToSanitize) {
                 std::string btnLabel = "Select for Sanitization##" + std::to_string(i);
-                if (UITheme::renderPrimaryButton(btnLabel.c_str(), ImVec2(220, 32))) {
+                if (UITheme::renderPrimaryButton(btnLabel.c_str(), ImVec2(-1, 34))) {
                     AppContext::getInstance().targetDriveForSanitization = dev.deviceId;
                     AppContext::getInstance().activeTab = ModuleTab::DRIVE_SANITIZER;
                 }
             } else {
-                UITheme::renderBadge("ROOT DRIVE - PERMANENTLY PROTECTED", UITheme::COLOR_RED);
+                UITheme::renderBadge("ROOT DRIVE PROTECTED", UITheme::COLOR_RED);
+                ImGui::Spacing();
+                UITheme::renderWrappedText("Operating system partition permanently locked against sanitization.", UITheme::COLOR_TEXT_MUTED);
             }
 
             ImGui::Columns(1);

@@ -57,7 +57,8 @@ public:
     // Execute full recovery pipeline: probe FS, extract metadata, fall back to carving
     RecoveryReport runRecovery(core::DiskImageReader& reader,
                                const std::string& outputDir = "",
-                               const CaseContext& ctx = CaseContext{});
+                               const CaseContext& ctx = CaseContext{},
+                               uint64_t partitionStartSector = 0);
 
     // Create appropriate analyzer for a given image
     std::unique_ptr<filesystem::FilesystemAnalyzer> detectFilesystem(core::DiskImageReader& reader, uint64_t partitionStartSector = 0);

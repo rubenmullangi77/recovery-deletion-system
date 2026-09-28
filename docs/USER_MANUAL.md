@@ -53,20 +53,18 @@ make -j$(nproc)
 
 ---
 
-## 3. Launching the Neumorphic Desktop GUI
+## 3. Launching the Dear ImGui Desktop GUI
 
-The desktop interface runs on Electron with a Soft Neumorphic UI (Warm Cream `#F3EFE9` background with Radiant Orange `#FA701F` interactive accents and Apple iPhone San Francisco typography).
+The native desktop interface runs via Dear ImGui and OpenGL with a Soft Neumorphic UI (Warm Linen Cream `#F4F0EA` background with Radiant Orange `#FA701F` interactive accents and crisp high-DPI modern typography).
 
 ### 3.1 Quick Start
 From the project root directory:
 ```bash
-npm start
-```
-Alternatively, navigate directly to the `electron` directory:
-```bash
-cd electron
-npm install
-npm start
+# Linux
+./build/bin/forensivault-gui
+
+# Windows
+build\bin\forensivault-gui.exe
 ```
 
 ---
@@ -197,6 +195,7 @@ forensivault_cli --interactive
 
 ## 6. Permissions, Elevation & Safety Precautions
 
-* **Physical Storage Access**: On Windows, enumerating and reading/writing physical drives (`\\.\PhysicalDriveX`) requires running the command prompt or Electron application with **Administrator privileges** (Run as Administrator). On Linux, root privileges (`sudo`) or `CAP_SYS_RAWIO` capabilities are required.
+* **Physical Storage Access**: On Windows, enumerating and reading/writing physical drives (`\\.\PhysicalDriveX`) requires running the command prompt or desktop GUI application with **Administrator privileges** (Run as Administrator). On Linux, root privileges (`sudo`) or `CAP_SYS_RAWIO` capabilities are required.
 * **Operating System Safety**: ForensiVault will strictly reject any request to wipe the drive containing the operating system, regardless of elevation.
 * **Evidence Integrity**: Never run sanitization commands against evidence storage. Store master disk images with write-blockers or set filesystem permissions to Read-Only before performing recovery.
+

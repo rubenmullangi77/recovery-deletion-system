@@ -4,6 +4,8 @@
 #include <forensivault/drive_sanitizer.hpp>
 #include <string>
 #include <vector>
+#include <atomic>
+#include <mutex>
 
 namespace forensivault::gui {
 
@@ -38,7 +40,8 @@ private:
 
     // Execution
     AsyncTaskRunner taskRunner_;
-    bool hasResult_ = false;
+    std::atomic<bool> hasResult_{false};
+    std::mutex resultMutex_;
     forensivault::api::DriveSanitizeResult finalResult_;
 };
 

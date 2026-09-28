@@ -95,19 +95,7 @@ CMake generates `build/compile_commands.json` and creates a symlink at `compile_
 
 ## Running the Application
 
-### 1. Electron Desktop GUI (Neumorphic Soft UI, iPhone Typography):
-Requires Node.js (>= 18):
-```bash
-# From repository root:
-npm start
-
-# Or directly from the electron directory:
-cd electron
-npm install
-npm start
-```
-
-### 2. Graphical Interface (Dear ImGui):
+### 1. Native Desktop GUI (Dear ImGui + GLFW):
 ```bash
 # Linux
 ./build/bin/forensivault-gui

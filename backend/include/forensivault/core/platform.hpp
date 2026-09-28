@@ -9,6 +9,8 @@
 #include <fstream>
 #include <sstream>
 #include <set>
+#include <chrono>
+#include <thread>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -24,7 +26,9 @@
 #include <climits>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <fcntl.h>
+#include <pwd.h>
 #if defined(__linux__)
 #include <sys/ioctl.h>
 #include <linux/fs.h>
@@ -75,9 +79,13 @@ public:
 
     /**
      * @brief Dynamically resolves the user's home directory. Zero hardcoded paths.
+     *        When running under elevated root/administrator privileges (sudo, pkexec, doas, UAC),
+     *        intelligently resolves the original calling user's home directory (e.g. /home/username)
+     *        instead of /root or C:\Windows\system32.
      */
     static inline std::string getUserHomeDirectory() {
 #if defined(_WIN32)
+        // 1. Standard user profile
         const char* profile = std::getenv("USERPROFILE");
         if (profile && *profile) return profile;
         const char* drive = std::getenv("HOMEDRIVE");
@@ -85,8 +93,82 @@ public:
         if (drive && path) return std::string(drive) + path;
         return ".";
 #else
+        // 1. If running under sudo, respect the original caller's SUDO_USER
+        const char* sudoUser = std::getenv("SUDO_USER");
+        if (sudoUser && *sudoUser && std::string(sudoUser) != "root") {
+            struct passwd* pw = getpwnam(sudoUser);
+            if (pw && pw->pw_dir && *(pw->pw_dir)) {
+                return std::string(pw->pw_dir);
+            }
+        }
+
+        // 2. If running under pkexec / polkit
+        const char* pkexecUid = std::getenv("PKEXEC_UID");
+        if (pkexecUid && *pkexecUid) {
+            uid_t uid = static_cast<uid_t>(std::atoi(pkexecUid));
+            if (uid > 0) {
+                struct passwd* pw = getpwuid(uid);
+                if (pw && pw->pw_dir && *(pw->pw_dir)) {
+                    return std::string(pw->pw_dir);
+                }
+            }
+        }
+
+        // 3. If running under doas
+        const char* doasUser = std::getenv("DOAS_USER");
+        if (doasUser && *doasUser && std::string(doasUser) != "root") {
+            struct passwd* pw = getpwnam(doasUser);
+            if (pw && pw->pw_dir && *(pw->pw_dir)) {
+                return std::string(pw->pw_dir);
+            }
+        }
+
+        // 4. Check Linux audit loginuid if running as root
+        if (geteuid() == 0) {
+            std::ifstream loginuidFile("/proc/self/loginuid");
+            if (loginuidFile.is_open()) {
+                unsigned long loginuid = 0;
+                if (loginuidFile >> loginuid && loginuid > 0 && loginuid < 4294967295UL) {
+                    struct passwd* pw = getpwuid(static_cast<uid_t>(loginuid));
+                    if (pw && pw->pw_dir && *(pw->pw_dir) && std::string(pw->pw_dir) != "/root") {
+                        return std::string(pw->pw_dir);
+                    }
+                }
+            }
+
+            // Fallback: check getlogin()
+            const char* loginName = getlogin();
+            if (loginName && *loginName && std::string(loginName) != "root") {
+                struct passwd* pw = getpwnam(loginName);
+                if (pw && pw->pw_dir && *(pw->pw_dir)) {
+                    return std::string(pw->pw_dir);
+                }
+            }
+        }
+
+        // 5. Standard non-root HOME environment variable
         const char* home = std::getenv("HOME");
-        if (home && *home) return home;
+        if (home && *home && (geteuid() != 0 || std::string(home) != "/root")) {
+            return std::string(home);
+        }
+
+        // 6. If root and /home contains user directories, select first user home directory
+        if (geteuid() == 0) {
+            try {
+                if (std::filesystem::exists("/home")) {
+                    for (const auto& entry : std::filesystem::directory_iterator("/home")) {
+                        if (entry.is_directory()) {
+                            std::string candidate = entry.path().string();
+                            if (candidate != "/home/lost+found") {
+                                return candidate;
+                            }
+                        }
+                    }
+                }
+            } catch (...) {}
+        }
+
+        if (home && *home) return std::string(home);
         return ".";
 #endif
     }
@@ -126,9 +208,10 @@ public:
 
     /**
      * @brief Elevates the current application to root / administrator on the fly.
-     *        On Linux: prompts the user for their sudo password in the active terminal,
-     *                  then replaces the process image via execvp.
-     *        On Windows: invokes the UAC dialog via ShellExecuteExW(runas).
+     *        On Linux: In desktop sessions, invokes the native graphical Polkit agent
+     *                  (pkexec) forwarding display variables, or falls back to interactive
+     *                  terminal sudo if running headless.
+     *        On Windows: Invokes the native UAC elevation dialog via ShellExecuteExW(runas).
      */
     static inline bool elevateProcess(const std::vector<std::string>& extraArgs = {}) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -136,7 +219,97 @@ public:
         std::string exe = getExecutablePath();
         if (exe.empty()) return false;
 
-        // Prompt user for sudo password interactively in the terminal
+        // Check if running in a graphical desktop environment
+        bool isGuiSession = (std::getenv("DISPLAY") != nullptr ||
+                             std::getenv("WAYLAND_DISPLAY") != nullptr ||
+                             std::getenv("XDG_CURRENT_DESKTOP") != nullptr);
+
+        bool hasPkexec = (system("command -v pkexec >/dev/null 2>&1") == 0);
+
+        if (isGuiSession && hasPkexec) {
+            // Forward desktop environment variables so GUI displays under root
+            std::string envStr = "env ";
+            if (const char* d = std::getenv("DISPLAY")) {
+                envStr += "DISPLAY=\"" + std::string(d) + "\" ";
+            }
+            if (const char* wd = std::getenv("WAYLAND_DISPLAY")) {
+                envStr += "WAYLAND_DISPLAY=\"" + std::string(wd) + "\" ";
+            }
+            std::string xauthPath;
+            if (const char* xa = std::getenv("XAUTHORITY")) {
+                xauthPath = xa;
+            } else {
+                std::string defaultXauth = getUserHomeDirectory() + "/.Xauthority";
+                if (std::filesystem::exists(defaultXauth)) {
+                    xauthPath = defaultXauth;
+                }
+            }
+            if (!xauthPath.empty()) {
+                envStr += "XAUTHORITY=\"" + xauthPath + "\" ";
+            }
+            if (const char* xrd = std::getenv("XDG_RUNTIME_DIR")) {
+                envStr += "XDG_RUNTIME_DIR=\"" + std::string(xrd) + "\" ";
+            }
+
+            // Grant local root access to X11/Xwayland if xhost is present
+            system("xhost +si:localuser:root >/dev/null 2>&1");
+
+            // Unique handshake token path to detect successful elevation without races
+            std::string tokenPath = "/tmp/.forensivault_elev_" + std::to_string(getpid()) + "_" +
+                                    std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".ready";
+            std::remove(tokenPath.c_str());
+
+            // Build root command script:
+            // 1. Mark handshake token as root so parent knows authorization succeeded
+            // 2. Exec elevated GUI application with environment
+            std::string script = "touch \"" + tokenPath + "\" && exec " + envStr + "\"" + exe + "\"";
+            for (const auto& a : extraArgs) {
+                script += " \"" + a + "\"";
+            }
+
+            pid_t pid = fork();
+            if (pid == 0) {
+                // Child: Execute pkexec with single authentication prompt
+                execlp("pkexec", "pkexec", "sh", "-c", script.c_str(), (char*)nullptr);
+                _exit(127);
+            } else if (pid > 0) {
+                // Parent: Monitor handshake token and child status
+                bool elevatedStarted = false;
+                for (int i = 0; i < 600; ++i) { // Up to 60s for user password entry
+                    int status = 0;
+                    pid_t res = waitpid(pid, &status, WNOHANG);
+                    if (res > 0) {
+                        // Child exited (e.g. user canceled or command completed)
+                        if (std::filesystem::exists(tokenPath)) {
+                            elevatedStarted = true;
+                        }
+                        break;
+                    }
+
+                    // Check if elevated process initialized
+                    if (std::filesystem::exists(tokenPath)) {
+                        elevatedStarted = true;
+                        break;
+                    }
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+
+                std::remove(tokenPath.c_str());
+
+                if (elevatedStarted) {
+                    // Give elevated instance a moment to initialize display before unprivileged parent exits
+                    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+                    std::exit(0);
+                }
+
+                // If authorization was declined or canceled, return false so the UI stays alive!
+                return false;
+            }
+            return false;
+        }
+
+        // Headless / Terminal Fallback: Prompt user for sudo password interactively in the terminal
         int auth = system("sudo -v");
         if (auth != 0) {
             return false;
@@ -184,7 +357,8 @@ public:
         }
 
         SHELLEXECUTEINFOW sei = { sizeof(sei) };
-        sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+        sei.cbSize = sizeof(sei);
+        sei.fMask = SEE_MASK_NOASYNC;
         sei.hwnd = GetForegroundWindow();
         sei.lpVerb = L"runas";
         sei.lpFile = wExe.c_str();
@@ -193,11 +367,8 @@ public:
         sei.nShow = SW_SHOWNORMAL;
 
         if (ShellExecuteExW(&sei)) {
-            if (sei.hProcess != NULL) {
-                WaitForSingleObject(sei.hProcess, INFINITE);
-                CloseHandle(sei.hProcess);
-            }
-            return true;
+            // User authorized UAC; exit unprivileged instance
+            std::exit(0);
         }
         return false;
 #else
