@@ -28,8 +28,12 @@ FormatValidationDetails FormatValidator::validate(const FileSignature& sig,
         return validatePng(data, length);
     } else if (sig.fileType == "PDF") {
         return validatePdf(data, length);
-    } else if (sig.fileType == "ZIP") {
+    } else if (sig.fileType == "ZIP" || sig.fileType == "DOCX" || sig.fileType == "XLSX" || sig.fileType == "PPTX") {
         return validateZipAndOffice(data, length);
+    } else if (sig.fileType == "DOC" || sig.fileType == "XLS" || sig.fileType == "PPT" || sig.fileType == "CFB") {
+        return validateOleDoc(data, length);
+    } else if (sig.fileType == "GIF") {
+        return validateGif(data, length);
     } else if (sig.fileType == "MP3") {
         return validateMp3(data, length);
     } else if (sig.fileType == "MP4") {
@@ -242,8 +246,8 @@ FormatValidationDetails FormatValidator::validatePdf(const uint8_t* data, size_t
     res.classifiedMime = "application/pdf";
     res.validationState = "INVALID";
 
-    if (length < 5 || std::memcmp(data, "%PDF-", 5) != 0) {
-        res.notes = "Invalid PDF magic header";
+    if (length < 8 || std::memcmp(data, "%PDF-", 5) != 0) {
+        res.notes = "Invalid PDF magic header (expected %PDF-)";
         res.validationState = "INVALID";
         return res;
     }
@@ -252,10 +256,31 @@ FormatValidationDetails FormatValidator::validatePdf(const uint8_t* data, size_t
     const std::string eofTag = "%%EOF";
     int64_t lastEof = -1;
 
+    // Scan for %%EOF markers. Stop if another file's magic header appears in raw data stream!
     for (size_t i = 5; i + 5 <= length; ++i) {
+        // Stop if another major file signature begins in raw data stream
+        if (i >= 8) {
+            // New PDF header
+            if (std::memcmp(data + i, "%PDF-", 5) == 0) {
+                break;
+            }
+            // PNG header
+            if (i + 8 <= length && std::memcmp(data + i, "\x89PNG\r\n\x1a\n", 8) == 0) {
+                break;
+            }
+            // ZIP/DOCX header
+            if (i + 4 <= length && std::memcmp(data + i, "PK\x03\x04", 4) == 0) {
+                break;
+            }
+            // JPEG SOI
+            if (i + 3 <= length && data[i] == 0xFF && data[i + 1] == 0xD8 && data[i + 2] == 0xFF) {
+                break;
+            }
+        }
+
         if (std::memcmp(data + i, eofTag.data(), 5) == 0) {
             size_t endPos = i + 5;
-            while (endPos < length && (data[endPos] == '\r' || data[endPos] == '\n')) {
+            while (endPos < length && (data[endPos] == '\r' || data[endPos] == '\n' || data[endPos] == ' ')) {
                 endPos++;
             }
             lastEof = static_cast<int64_t>(endPos);
@@ -267,7 +292,7 @@ FormatValidationDetails FormatValidator::validatePdf(const uint8_t* data, size_t
         res.validationState = "PARTIAL";
         res.trueLength = length;
         res.confidenceScore = 40.0;
-        res.notes = "PDF header %PDF- found, but %%EOF trailer marker missing (Partial recovery / fragmentation unresolved)";
+        res.notes = "PDF header %PDF- found, but %%EOF trailer marker missing (Partial recovery / truncated document)";
         return res;
     }
 
@@ -275,7 +300,21 @@ FormatValidationDetails FormatValidator::validatePdf(const uint8_t* data, size_t
     res.validationState = "VALID";
     res.trueLength = static_cast<uint64_t>(lastEof);
     res.confidenceScore = 95.0;
-    res.notes = "Valid PDF document: verified %PDF- header and %%EOF trailer marker";
+
+    // Structural checks inside the bounded PDF slice
+    std::string pdfBody(reinterpret_cast<const char*>(data), static_cast<size_t>(res.trueLength));
+    bool hasObj = (pdfBody.find(" obj") != std::string::npos);
+    bool hasXref = (pdfBody.find("xref") != std::string::npos || pdfBody.find("/XRef") != std::string::npos);
+    bool hasTrailer = (pdfBody.find("trailer") != std::string::npos || pdfBody.find("/Root") != std::string::npos || pdfBody.find("/Pages") != std::string::npos);
+
+    if (hasObj && (hasXref || hasTrailer)) {
+        res.confidenceScore = 98.0;
+        res.notes = "Valid PDF document: verified %PDF- header, catalog tree/objects, and %%EOF trailer marker";
+    } else {
+        res.confidenceScore = 85.0;
+        res.notes = "Valid PDF document: verified %PDF- header and %%EOF trailer marker";
+    }
+
     return res;
 }
 
@@ -294,33 +333,58 @@ FormatValidationDetails FormatValidator::validateZipAndOffice(const uint8_t* dat
         return res;
     }
 
-    // Search backwards for End of Central Directory Record (EOCD: 50 4B 05 06)
-    // EOCD is located at the very end of the archive (within 65,535 byte comment + 22 bytes header)
     int64_t eocdOffset = -1;
-    size_t searchBackMax = std::min<size_t>(length, 65535 + 22);
-    size_t startScan = length >= 22 ? length - 22 : 0;
-    size_t endScan = length >= searchBackMax ? length - searchBackMax : 0;
 
-    for (size_t i = startScan; i >= endScan; --i) {
+    // First: Look for matching EOCD mathematically:
+    // In a self-contained ZIP/DOCX archive starting at data[0],
+    // EOCD at offset `i` has central directory offset `cdOffset` and size `cdSize`.
+    // Valid archive satisfies: cdOffset + cdSize == i, and data[cdOffset] == PK\x01\x02
+    for (size_t i = 4; i + 22 <= length; ++i) {
+        // EOCD signature: 50 4B 05 06
         if (data[i] == 0x50 && data[i + 1] == 0x4B && data[i + 2] == 0x05 && data[i + 3] == 0x06) {
-            uint16_t commentLen = static_cast<uint16_t>(data[i + 20]) |
-                                 (static_cast<uint16_t>(data[i + 21]) << 8);
-            if (i + 22 + commentLen <= length) {
+            uint32_t cdSize = *reinterpret_cast<const uint32_t*>(data + i + 12);
+            uint32_t cdOffset = *reinterpret_cast<const uint32_t*>(data + i + 16);
+            uint16_t commentLen = *reinterpret_cast<const uint16_t*>(data + i + 20);
+
+            if (static_cast<size_t>(cdOffset) + static_cast<size_t>(cdSize) == i &&
+                static_cast<size_t>(cdOffset) + 4 <= length &&
+                data[cdOffset] == 0x50 && data[cdOffset + 1] == 0x4B &&
+                data[cdOffset + 2] == 0x01 && data[cdOffset + 3] == 0x02) {
+                // Exact matching EOCD found!
                 eocdOffset = static_cast<int64_t>(i + 22 + commentLen);
                 break;
             }
         }
-        if (i == 0) break;
     }
 
-    // Fallback forward scan if backwards search did not match
+    // Fallback 1: Standard backwards search within last 65535 + 22 bytes
     if (eocdOffset <= 0) {
-        for (size_t i = 0; i + 22 <= length; ++i) {
+        size_t searchBackMax = std::min<size_t>(length, 65535 + 22);
+        size_t startScan = length >= 22 ? length - 22 : 0;
+        size_t endScan = length >= searchBackMax ? length - searchBackMax : 0;
+
+        for (size_t i = startScan; i >= endScan; --i) {
             if (data[i] == 0x50 && data[i + 1] == 0x4B && data[i + 2] == 0x05 && data[i + 3] == 0x06) {
                 uint16_t commentLen = static_cast<uint16_t>(data[i + 20]) |
                                      (static_cast<uint16_t>(data[i + 21]) << 8);
                 if (i + 22 + commentLen <= length) {
                     eocdOffset = static_cast<int64_t>(i + 22 + commentLen);
+                    break;
+                }
+            }
+            if (i == 0) break;
+        }
+    }
+
+    // Fallback 2: Forward scan for first valid EOCD
+    if (eocdOffset <= 0) {
+        for (size_t i = 4; i + 22 <= length; ++i) {
+            if (data[i] == 0x50 && data[i + 1] == 0x4B && data[i + 2] == 0x05 && data[i + 3] == 0x06) {
+                uint16_t commentLen = static_cast<uint16_t>(data[i + 20]) |
+                                     (static_cast<uint16_t>(data[i + 21]) << 8);
+                if (i + 22 + commentLen <= length) {
+                    eocdOffset = static_cast<int64_t>(i + 22 + commentLen);
+                    break;
                 }
             }
         }
@@ -343,31 +407,130 @@ FormatValidationDetails FormatValidator::validateZipAndOffice(const uint8_t* dat
     std::string archiveContent(reinterpret_cast<const char*>(data), static_cast<size_t>(res.trueLength));
 
     if (archiveContent.find("word/document.xml") != std::string::npos ||
-        archiveContent.find("word/") != std::string::npos) {
+        archiveContent.find("word/") != std::string::npos ||
+        archiveContent.find("wordprocessingml") != std::string::npos) {
         res.classifiedType = "DOCX";
         res.classifiedExtension = "docx";
         res.classifiedMime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-        res.confidenceScore = 96.0;
-        res.notes = "Valid Microsoft Word Document (DOCX): OpenXML structures and EOCD verified";
+        res.confidenceScore = 98.0;
+        res.notes = "Valid Microsoft Word Document (DOCX): OpenXML document package, central directory, and EOCD record verified";
     } else if (archiveContent.find("xl/workbook.xml") != std::string::npos ||
-               archiveContent.find("xl/") != std::string::npos) {
+               archiveContent.find("xl/") != std::string::npos ||
+               archiveContent.find("spreadsheetml") != std::string::npos) {
         res.classifiedType = "XLSX";
         res.classifiedExtension = "xlsx";
         res.classifiedMime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-        res.confidenceScore = 96.0;
+        res.confidenceScore = 98.0;
         res.notes = "Valid Microsoft Excel Spreadsheet (XLSX): OpenXML structures and EOCD verified";
     } else if (archiveContent.find("ppt/presentation.xml") != std::string::npos ||
-               archiveContent.find("ppt/") != std::string::npos) {
+               archiveContent.find("ppt/") != std::string::npos ||
+               archiveContent.find("presentationml") != std::string::npos) {
         res.classifiedType = "PPTX";
         res.classifiedExtension = "pptx";
         res.classifiedMime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-        res.confidenceScore = 96.0;
+        res.confidenceScore = 98.0;
         res.notes = "Valid Microsoft PowerPoint Presentation (PPTX): OpenXML structures and EOCD verified";
     } else {
         res.confidenceScore = 92.0;
         res.notes = "Valid standard ZIP archive: End of Central Directory verified";
     }
 
+    return res;
+}
+
+// ---------------- 4b. Legacy OLE Office Document Validator (.doc, .xls, .ppt) ----------------
+FormatValidationDetails FormatValidator::validateOleDoc(const uint8_t* data, size_t length) {
+    FormatValidationDetails res;
+    res.classifiedType = "DOC";
+    res.classifiedExtension = "doc";
+    res.classifiedMime = "application/msword";
+    res.validationState = "INVALID";
+
+    const uint8_t oleHeader[] = {0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1};
+    if (length < 512 || std::memcmp(data, oleHeader, 8) != 0) {
+        res.notes = "Invalid OLE Compound File Binary header";
+        return res;
+    }
+
+    // Sector shift at offset 30 (uint16)
+    uint16_t sectorShift = *reinterpret_cast<const uint16_t*>(data + 30);
+    if (sectorShift != 9 && sectorShift != 12) {
+        res.notes = "Invalid OLE sector shift size (expected 9 or 12)";
+        return res;
+    }
+    size_t sectorSize = 1ULL << sectorShift;
+    uint32_t fatSectors = *reinterpret_cast<const uint32_t*>(data + 44);
+    size_t estimatedSize = std::min<size_t>(length, std::max<size_t>(512, (1ULL + fatSectors) * sectorSize));
+
+    std::string content(reinterpret_cast<const char*>(data), std::min<size_t>(length, 65536));
+    if (content.find("WordDocument") != std::string::npos) {
+        res.classifiedType = "DOC";
+        res.classifiedExtension = "doc";
+        res.classifiedMime = "application/msword";
+        res.confidenceScore = 95.0;
+        res.notes = "Valid Microsoft Word 97-2003 Document (DOC): OLE CFB container and WordDocument stream verified";
+    } else if (content.find("Workbook") != std::string::npos || content.find("Book") != std::string::npos) {
+        res.classifiedType = "XLS";
+        res.classifiedExtension = "xls";
+        res.classifiedMime = "application/vnd.ms-excel";
+        res.confidenceScore = 95.0;
+        res.notes = "Valid Microsoft Excel 97-2003 Spreadsheet (XLS): OLE CFB container and Workbook stream verified";
+    } else if (content.find("PowerPoint Document") != std::string::npos) {
+        res.classifiedType = "PPT";
+        res.classifiedExtension = "ppt";
+        res.classifiedMime = "application/vnd.ms-powerpoint";
+        res.confidenceScore = 95.0;
+        res.notes = "Valid Microsoft PowerPoint 97-2003 Presentation (PPT): OLE CFB container and presentation stream verified";
+    } else {
+        res.classifiedType = "DOC";
+        res.classifiedExtension = "doc";
+        res.classifiedMime = "application/msword";
+        res.confidenceScore = 80.0;
+        res.notes = "Valid Microsoft Office Compound File Binary container";
+    }
+
+    res.isValid = true;
+    res.validationState = "VALID";
+    res.trueLength = estimatedSize;
+    return res;
+}
+
+// ---------------- 4c. GIF Validator ----------------
+FormatValidationDetails FormatValidator::validateGif(const uint8_t* data, size_t length) {
+    FormatValidationDetails res;
+    res.classifiedType = "GIF";
+    res.classifiedExtension = "gif";
+    res.classifiedMime = "image/gif";
+    res.validationState = "INVALID";
+
+    if (length < 13 || (std::memcmp(data, "GIF87a", 6) != 0 && std::memcmp(data, "GIF89a", 6) != 0)) {
+        res.notes = "Invalid GIF header (expected GIF87a or GIF89a)";
+        return res;
+    }
+
+    // Find GIF trailer 0x3B
+    int64_t trailerPos = -1;
+    for (size_t i = 13; i < length; ++i) {
+        if (data[i] == 0x3B) {
+            trailerPos = static_cast<int64_t>(i + 1);
+            break;
+        }
+    }
+
+    if (trailerPos <= 0) {
+        res.isValid = false;
+        res.validationState = "PARTIAL";
+        res.trueLength = length;
+        res.confidenceScore = 40.0;
+        res.notes = "GIF header verified, but terminating trailer (0x3B) missing";
+        return res;
+    }
+
+    res.isValid = true;
+    res.validationState = "VALID";
+    res.trueLength = static_cast<uint64_t>(trailerPos);
+    res.confidenceScore = 95.0;
+    res.notes = "Valid GIF image: header and trailer (0x3B) verified";
     return res;
 }
 

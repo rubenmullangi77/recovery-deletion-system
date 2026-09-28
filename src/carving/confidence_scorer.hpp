@@ -101,6 +101,7 @@ private:
     static void scorePng(const uint8_t* data, size_t length, ConfidenceEvaluationResult& res);
     static void scorePdf(const uint8_t* data, size_t length, ConfidenceEvaluationResult& res);
     static void scoreZipAndOffice(const uint8_t* data, size_t length, const std::string& type, ConfidenceEvaluationResult& res);
+    static void scoreOleDoc(const uint8_t* data, size_t length, const std::string& type, ConfidenceEvaluationResult& res);
     static void scoreMp3(const uint8_t* data, size_t length, ConfidenceEvaluationResult& res);
     static void scoreMp4(const uint8_t* data, size_t length, ConfidenceEvaluationResult& res);
     static void scoreGeneric(const uint8_t* data, size_t length, ConfidenceEvaluationResult& res);

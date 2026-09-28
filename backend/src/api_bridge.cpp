@@ -292,7 +292,7 @@ CarveSessionResult CarverAPI::carve(const std::string& imagePath,
 
     core::DiskImageReader reader(imagePath);
     if (!reader.isOpen()) {
-        result.errorMessage = "Failed to open image: " + reader.lastError();
+        result.errorMessage = "Failed to open target source: " + reader.lastError();
         return result;
     }
 

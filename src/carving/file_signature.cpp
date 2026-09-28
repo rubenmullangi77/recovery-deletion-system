@@ -134,6 +134,37 @@ void SignatureDatabase::initializeDefaultSignatures() {
         10
     });
 
+    // 7. Legacy Microsoft Office (Word .doc, Excel .xls, PowerPoint .ppt - OLE Compound Document)
+    // Header: D0 CF 11 E0 A1 B1 1A E1
+    signatures_.push_back({
+        "DOC",
+        "doc",
+        "application/msword",
+        {0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1},
+        {},
+        {},
+        512,
+        200ULL * 1024ULL * 1024ULL,
+        CarvingStrategy::LengthInHeader,
+        12
+    });
+
+    // 8. GIF (Graphics Interchange Format)
+    // Header: 47 49 46 38 (GIF87a / GIF89a)
+    // Footer: 3B
+    signatures_.push_back({
+        "GIF",
+        "gif",
+        "image/gif",
+        {0x47, 0x49, 0x46, 0x38},
+        {},
+        {0x3B},
+        32,
+        50ULL * 1024ULL * 1024ULL,
+        CarvingStrategy::HeaderFooter,
+        10
+    });
+
     // Sort by priority
     std::sort(signatures_.begin(), signatures_.end(), [](const FileSignature& a, const FileSignature& b) {
         return a.priority > b.priority;

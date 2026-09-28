@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ForensiVault</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="app-header">
+        <div class="brand-section">
+            <div class="brand-logo">
+                <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+            </div>
+            <div>
+                <div class="brand-title">FORENSIVAULT</div>
+            </div>
+        </div>
+
+        <div class="header-badges">
+            <span class="badge" id="badgePlatform">Ready</span>
+        </div>
+    </header>
+
+    <!-- App Container -->
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="app-sidebar">
+            <div class="nav-item active" data-tab="dashboard">
+                <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+                <span>Dashboard</span>
+            </div>
+
+            <!-- Recovery (Preserve) -->
+            <div class="nav-section-title">RECOVERY</div>
+
+            <div class="nav-item" data-tab="carver">
+                <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                <span>File Carver</span>
+            </div>
+
+            <div class="nav-item" data-tab="fsRecovery">
+                <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                <span>Filesystem Recovery</span>
+            </div>
+
+            <div class="nav-item" data-tab="evidenceCatalog">
+                <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                <span>Recovered Files</span>
+            </div>
+
+            <!-- Deletion (Destroy) -->
+            <div class="nav-section-title">DELETION</div>
+
+            <div class="nav-item" data-tab="fileEraser">
+                <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                <span>File & Folder Eraser</span>
+            </div>
+
+            <div class="nav-item" data-tab="driveSanitizer">
+                <svg viewBox="0 0 24 24"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>
+                <span>Drive Sanitizer</span>
+            </div>
+
+            <!-- System -->
+            <div class="nav-section-title">SYSTEM</div>
+
+            <div class="nav-item" data-tab="deviceDetector">
+                <svg viewBox="0 0 24 24"><path d="M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4l2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z"/></svg>
+                <span>Storage Devices</span>
+            </div>
+
+            <div class="nav-item" data-tab="diskInspect">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                <span>Disk Hashes</span>
+            </div>
+
+            <div class="nav-item" data-tab="auditLog">
+                <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                <span>Audit Log</span>
+            </div>
+
+            <div class="nav-item" data-tab="benchmark">
+                <svg viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.9 17.66 11 21 11 21z"/></svg>
+                <span>Benchmark</span>
+            </div>
+        </nav>
+
+        <!-- Main Workspace -->
+        <main class="app-workspace" id="workspace">
+
+            <!-- 1. Dashboard: Simple Dual-Domain Split -->
+            <section class="tab-pane active" id="pane-dashboard">
+                <div class="module-header">
+                    <div class="module-title">Dashboard</div>
+                </div>
+
+                <div class="dual-domain-container">
+                    <!-- RECOVERY PANEL -->
+                    <div class="neu-card domain-card">
+                        <div class="domain-header">
+                            <div class="badge">RECOVERY</div>
+                            <h2 class="domain-title">File Recovery</h2>
+                        </div>
+                        <div class="domain-actions-vertical">
+                            <button class="btn btn-primary" id="btnDashLaunchCarver">Open File Carver</button>
+                            <button class="btn btn-secondary" id="btnDashLaunchFs">Filesystem Recovery</button>
+                            <button class="btn btn-secondary" id="btnDashLaunchCatalog">View Recovered Files</button>
+                        </div>
+                    </div>
+
+                    <!-- DELETION PANEL -->
+                    <div class="neu-card domain-card">
+                        <div class="domain-header">
+                            <div class="badge">DELETION</div>
+                            <h2 class="domain-title">Secure Deletion</h2>
+                        </div>
+                        <div class="domain-actions-vertical">
+                            <button class="btn btn-primary" id="btnDashLaunchEraser">Erase Files & Folders</button>
+                            <button class="btn btn-secondary" id="btnDashLaunchDriveSanitize">Sanitize Drive</button>
+                            <button class="btn btn-secondary" id="btnDashLaunchDevices">Storage Devices</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. File Carver -->
+            <section class="tab-pane" id="pane-carver" style="display: none;">
+                <div class="module-header">
+                    <div class="module-title">File Carver</div>
+                </div>
+
+                <div class="neu-card">
+                    <div class="form-group">
+                        <label class="form-label">Source File or Image:</label>
+                        <div class="input-row">
+                            <input type="text" class="neu-input" id="carverImagePath" placeholder="Select file or disk image...">
+                            <button class="btn btn-secondary" id="btnBrowseCarverImage">Browse</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Output Directory:</label>
+                        <div class="input-row">
+                            <input type="text" class="neu-input" id="carverOutputDir" value="recovered/carved">
+                            <button class="btn btn-secondary" id="btnBrowseCarverOut">Browse</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <button class="btn btn-primary" id="btnStartCarve">Start Carving</button>
+                    </div>
+                </div>
+
+                <div id="carverProgressCard" class="neu-card" style="display: none;">
+                    <div class="progress-track">
+                        <div class="progress-fill" id="carverProgressFill"></div>
+                    </div>
+                    <div class="progress-text-row">
+                        <span id="carverProgressStatus">0%</span>
+                        <span id="carverProgressFiles">0 files</span>
+                    </div>
+                </div>
+
+                <div id="carverResultCard" class="neu-card" style="display: none;">
+                    <div class="neu-card-title">Results</div>
+                    <div id="carverResultContent"></div>
+                </div>
+            </section>
+
+            <!-- 3. Filesystem Recovery -->
+            <section class="tab-pane" id="pane-fsRecovery" style="display: none;">
+                <div class="module-header">
+                    <div class="module-title">Filesystem Recovery</div>
+                </div>
+
+                <div class="neu-card">
+                    <div class="form-group">
+                        <label class="form-label">Source Disk Image:</label>
+                        <div class="input-row">
+                            <input type="text" class="neu-input" id="fsImagePath" placeholder="Select image...">
+                            <button class="btn btn-secondary" id="btnBrowseFsImage">Browse</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Output Directory:</label>
+                        <div class="input-row">
+                            <input type="text" class="neu-input" id="fsOutputDir" value="recovered/filesystem">
+                            <button class="btn btn-secondary" id="btnBrowseFsOut">Browse</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <button class="btn btn-primary" id="btnStartFsRecover">Recover Files</button>
+                    </div>
+                </div>
+
+                <div id="fsResultCard" class="neu-card" style="display: none;">
+                    <div class="neu-card-title">Results</div>
+                    <div id="fsResultContent"></div>
+                </div>
+            </section>
+
+            <!-- 4. Recovered Files Catalog -->
+            <section class="tab-pane" id="pane-evidenceCatalog" style="display: none;">
+                <div class="module-header">
+                    <div class="module-title">Recovered Files</div>
+                </div>
+
+                <div class="neu-card">
+                    <div class="input-row">
+                        <input type="text" class="neu-input" id="catalogDirPath" value="recovered">
+                        <button class="btn btn-secondary" id="btnBrowseCatalogDir">Browse</button>
+                        <button class="btn btn-secondary" id="btnRefreshCatalog">Refresh</button>
+                        <button class="btn btn-primary" id="btnOpenCatalogFolder">Open Folder</button>
+                    </div>
+                </div>
+
+                <div class="neu-card" id="catalogFilesCard">
+                    <div class="neu-card-title" style="display: flex; justify-content: space-between;">
+                        <span>Files List</span>
+                        <span id="catalogCountBadge" class="badge">0 files</span>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="neu-table">
+                            <thead>
+                                <tr>
+                                    <th>File Name</th>
+                                    <th>Size</th>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="evidenceTableBody">
+                                <tr>
+                                    <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 25px;">
+                                        No files found.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 5. File & Folder Eraser -->
+            <section class="tab-pane" id="pane-fileEraser" style="display: none;">
+                <div class="module-header">
+                    <div class="module-title">File & Folder Eraser</div>
+                </div>
+
+                <div class="neu-card">
+                    <div class="form-group">
+                        <label class="form-label">Target File or Folder:</label>
+                        <div class="input-row">
+                            <input type="text" class="neu-input" id="erasePath" placeholder="Select target to erase...">
+                            <button class="btn btn-secondary" id="btnBrowseFile">File</button>
+                            <button class="btn btn-secondary" id="btnBrowseFolder">Folder</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Method:</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="eraseStandard" value="NIST" checked>
+                                <span>Single Pass (Zero Fill)</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="eraseStandard" value="DOD">
+                                <span>3-Pass (DoD 5220.22-M)</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="eraseStandard" value="RANDOM">
+                                <span>Random Overwrite</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; margin-top: 20px;">
+                        <button class="btn btn-secondary" id="btnPreviewErase">Preview</button>
+                        <button class="btn btn-primary" id="btnStartErase">Erase Target</button>
+                    </div>
+                </div>
+
+                <div id="erasePreviewCard" class="neu-card" style="display: none;">
+                    <div class="neu-card-title">Preview</div>
+                    <div id="erasePreviewContent"></div>
+                </div>
+
+                <div id="eraseProgressCard" class="neu-card" style="display: none;">
+                    <div class="progress-track">
+                        <div class="progress-fill" id="eraseProgressFill"></div>
+                    </div>
+                    <div class="progress-text-row">
+                        <span id="eraseProgressStatus">0%</span>
+                        <span id="eraseProgressFile">Working...</span>
+                    </div>
+                </div>
+
+                <div id="eraseResultCard" class="neu-card" style="display: none;">
+                    <div class="neu-card-title">Result</div>
+                    <div id="eraseResultDetails"></div>
+                </div>
+            </section>
+
+            <!-- 6. Drive Sanitizer -->
+            <section class="tab-pane" id="pane-driveSanitizer" style="display: none;">
+                <div class="module-header">
+                    <div class="module-title">Drive Sanitizer</div>
+                </div>
+
+                <div class="neu-card">
+                    <div class="form-group">
+                        <label class="form-label">Target Image or Disk:</label>
+                        <div class="input-row">
+                            <input type="text" class="neu-input" id="driveTargetPath" placeholder="Select image or device...">
+                            <button class="btn btn-secondary" id="btnBrowseDiskImage">Browse Image</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Or Select Detected Drive:</label>
+                        <select class="neu-input" id="selectDriveDropdown">
+                            <option value="">Scanning...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Method:</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="driveStandard" value="NIST" checked>
+                                <span>Single Pass (Zero Fill)</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="driveStandard" value="DOD">
+                                <span>3-Pass (DoD Standard)</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="driveStandard" value="RANDOM">
+                                <span>Random Overwrite</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <button class="btn btn-primary" id="btnStartDriveSanitize">Sanitize Drive</button>
+                    </div>
+                </div>
+
+                <div id="driveProgressCard" class="neu-card" style="display: none;">
+                    <div class="progress-track">
+                        <div class="progress-fill" id="driveProgressFill"></div>
+                    </div>
+                    <div class="progress-text-row">
+                        <span id="driveProgressStatus">0%</span>
+                        <span id="driveProgressSpeed"></span>
+                    </div>
+                </div>
+
+                <div id="driveResultCard" class="neu-card" style="display: none;">
+                    <div class="neu-card-title">Result</div>
+                    <div id="driveResultContent"></div>
+                </div>
+            </section>
+
+            <!-- 7. Storage Devices -->
+            <section class="tab-pane" id="pane-deviceDetector" style="display: none;">
+                <div class="module-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="module-title">Storage Devices</div>
+                    <button class="btn btn-secondary" id="btnRefreshDevices">Rescan</button>
+                </div>
+
+                <div id="devicesListContainer">
+                    <div class="neu-card">Scanning...</div>
+                </div>
+            </section>
+
+            <!-- 8. Disk Hashes -->
+            <section class="tab-pane" id="pane-diskInspect" style="display: none;">
+                <div class="module-header">
+                    <div class="module-title">Disk Hashes</div>
+                </div>
+
+                <div class="neu-card">
+                    <div class="form-group">
+                        <label class="form-label">Select Image or Disk:</label>
+                        <div class="input-row">
+                            <input type="text" class="neu-input" id="inspectImagePath" placeholder="Select file...">
+                            <button class="btn btn-secondary" id="btnBrowseInspectImage">Browse</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <button class="btn btn-primary" id="btnStartInspect">Compute Hashes</button>
+                    </div>
+                </div>
+
+                <div id="inspectResultCard" class="neu-card" style="display: none;">
+                    <div class="neu-card-title">Hashes & Geometry</div>
+                    <div id="inspectResultContent"></div>
+                </div>
+            </section>
+
+            <!-- 9. Benchmark -->
+            <section class="tab-pane" id="pane-benchmark" style="display: none;">
+                <div class="module-header">
+                    <div class="module-title">Benchmark</div>
+                </div>
+
+                <div class="neu-card">
+                    <button class="btn btn-primary" id="btnRunBenchmark">Run Benchmark</button>
+                </div>
+
+                <div id="benchResultCard" class="neu-card" style="display: none;">
+                    <div class="neu-card-title">Results</div>
+                    <div id="benchResultContent"></div>
+                </div>
+            </section>
+
+            <!-- 10. Audit Log -->
+            <section class="tab-pane" id="pane-auditLog" style="display: none;">
+                <div class="module-header">
+                    <div class="module-title">Audit Log</div>
+                </div>
+
+                <div class="neu-card">
+                    <button class="btn btn-primary" id="btnExportAudit">Export Audit Log</button>
+                </div>
+
+                <div id="auditResultCard" class="neu-card" style="display: none;">
+                    <div class="neu-card-title">Status</div>
+                    <div id="auditResultContent"></div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal-backdrop" id="safetyModal">
+        <div class="modal-box">
+            <div class="modal-header">Confirm Deletion</div>
+            <div class="modal-body">
+                <p id="modalTargetText">Target: ...</p>
+                <br>
+                <label class="form-label">Type "DESTROY" to confirm:</label>
+                <input type="text" class="neu-input" id="modalConfirmInput" placeholder="DESTROY">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modalBtnCancel">Cancel</button>
+                <button class="btn btn-primary" id="modalBtnConfirm" disabled>Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

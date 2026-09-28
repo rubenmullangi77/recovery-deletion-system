@@ -38,6 +38,8 @@ public:
     static FormatValidationDetails validatePng(const uint8_t* data, size_t length);
     static FormatValidationDetails validatePdf(const uint8_t* data, size_t length);
     static FormatValidationDetails validateZipAndOffice(const uint8_t* data, size_t length);
+    static FormatValidationDetails validateOleDoc(const uint8_t* data, size_t length);
+    static FormatValidationDetails validateGif(const uint8_t* data, size_t length);
     static FormatValidationDetails validateMp3(const uint8_t* data, size_t length);
     static FormatValidationDetails validateMp4(const uint8_t* data, size_t length);
 };

@@ -745,14 +745,14 @@ void interactiveFileCarving() {
     FV_PRINTLN("  (Signature-Based, Structure-Based & Fragment Reconstruction)");
     FV_PRINTLN("=============================================================");
 
-    std::string imgPath = selectPathFzf("Select evidence image file (.img, .dd, .raw) with FZF");
+    std::string imgPath = selectPathFzf("Select target raw data file, evidence dump, document, or disk image with FZF");
     if (imgPath.empty()) {
         FV_PRINTLN("[ABORTED] No path provided.");
         return;
     }
 
     if (!fs::exists(imgPath)) {
-        FV_PRINTERRLN("[ERROR] Evidence image not found: " + imgPath);
+        FV_PRINTERRLN("[ERROR] Target file or evidence source not found: " + imgPath);
         return;
     }
 
@@ -772,7 +772,7 @@ void interactiveFileCarving() {
 
     if (res.success) {
         FV_PRINTLN("[CARVING COMPLETE]");
-        FV_PRINTLN("  Source Image:       " + res.sourcePath);
+        FV_PRINTLN("  Target Source:      " + res.sourcePath);
         FV_PRINTLN("  Output Directory:   " + res.outputDirectory);
         FV_PRINTLN("  Signatures Found:   " + std::to_string(res.signaturesDiscovered));
         FV_PRINTLN("  Files Carved:       " + std::to_string(res.filesSuccessfullyCarved));
@@ -1107,10 +1107,11 @@ int main(int argc, char* argv[]) {
 
     if (args[0] == "--carve") {
         if (args.size() < 2) {
-            FV_PRINTERRLN("[ERROR] Missing disk image path argument for --carve");
+            FV_PRINTERRLN("[ERROR] Missing target path argument for --carve");
+            FV_PRINTERRLN("Usage: forensivault_cli --carve <raw_data_or_image_path> [output_directory]");
             return 1;
         }
-        std::string imagePath = args[1];
+        std::string targetPath = args[1];
         std::string outDir = (args.size() >= 3) ? args[2] : "recovered/carved";
 
         auto progressCb = [](const forensivault::api::CarveProgress& prg) {
@@ -1120,11 +1121,19 @@ int main(int argc, char* argv[]) {
             forensivault::Logger::getInstance().print(ss.str());
         };
 
-        auto session = forensivault::api::CarverAPI::carve(imagePath, outDir, 30.0, progressCb);
+        auto session = forensivault::api::CarverAPI::carve(targetPath, outDir, 30.0, progressCb);
         FV_PRINTLN("\n");
 
         if (session.success) {
             FV_PRINTLN("Carving completed: " + std::to_string(session.filesSuccessfullyCarved) + " files recovered to " + outDir);
+            for (const auto& f : session.carvedFiles) {
+                std::ostringstream ss;
+                ss << "  - [" << f.fileType << "] " << f.recoveredFilePath
+                   << " (Offset 0x" << std::hex << std::uppercase << f.offset << std::dec
+                   << ", Size: " << f.lengthBytes << " bytes, Score: "
+                   << std::fixed << std::setprecision(1) << f.confidenceScore << "%)";
+                FV_PRINTLN(ss.str());
+            }
             return 0;
         } else {
             FV_PRINTERRLN("Carving failed: " + session.errorMessage);
@@ -1282,7 +1291,32 @@ int main(int argc, char* argv[]) {
     }
 
     if (args[0] == "--detect-drives") {
-        interactiveDeviceDetection();
+        auto devices = forensivault::api::DriveSanitizerAPI::detectDevices();
+        if (devices.empty()) {
+            FV_PRINTLN("No attached storage devices detected or access restricted.");
+            return 0;
+        }
+
+        for (const auto& dev : devices) {
+            if (dev.name.empty() || dev.name == dev.deviceId) {
+                FV_PRINTLN("Device: " + dev.deviceId);
+            } else {
+                FV_PRINTLN("Device: " + dev.deviceId + " (" + dev.name + ")");
+            }
+            FV_PRINTLN("  Model:        " + dev.model);
+            FV_PRINTLN("  Interface:    " + dev.interfaceType);
+            FV_PRINTLN("  Media Type:   " + dev.mediaType);
+            {
+                std::ostringstream ss;
+                ss << "  Capacity:     " << (static_cast<double>(dev.sizeBytes) / (1024.0 * 1024.0 * 1024.0)) << " GB (" << dev.sizeBytes << " bytes)";
+                FV_PRINTLN(ss.str());
+            }
+            FV_PRINTLN("  System/Root:  " + std::string(dev.isSystemOrRootDrive ? "YES [PROTECTED]" : "NO"));
+            FV_PRINTLN("  Safe to Wipe: " + std::string(dev.isSafeToSanitize ? "YES" : "NO [LOCKED]"));
+            for (const auto& cap : dev.capabilities) {
+                FV_PRINTLN("  Capabilities: " + cap);
+            }
+        }
         return 0;
     }
 

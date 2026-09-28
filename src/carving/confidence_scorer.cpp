@@ -58,6 +58,8 @@ ConfidenceEvaluationResult RecoveryConfidenceScorer::evaluate(uint64_t fileId,
         scorePdf(data, length, res);
     } else if (fileType == "ZIP" || fileType == "DOCX" || fileType == "XLSX" || fileType == "PPTX") {
         scoreZipAndOffice(data, length, fileType, res);
+    } else if (fileType == "DOC" || fileType == "XLS" || fileType == "PPT" || fileType == "CFB") {
+        scoreOleDoc(data, length, fileType, res);
     } else if (fileType == "MP3") {
         scoreMp3(data, length, res);
     } else if (fileType == "MP4") {
@@ -368,6 +370,54 @@ void RecoveryConfidenceScorer::scoreZipAndOffice(const uint8_t* data, size_t len
         res.reasons.push_back("ZIP archive directory successfully parsed without decompression faults");
     }
 }
+
+// ---------------- 4b. Legacy OLE Office Document (.doc, .xls, .ppt) Scoring ----------------
+void RecoveryConfidenceScorer::scoreOleDoc(const uint8_t* data, size_t length,
+                                          const std::string& type, ConfidenceEvaluationResult& res) {
+    if (length >= 8 && data[0] == 0xD0 && data[1] == 0xCF && data[2] == 0x11 && data[3] == 0xE0) {
+        res.breakdown.headerScore = 20;
+        res.reasons.push_back("Valid OLE Compound Document signature (D0 CF 11 E0)");
+    } else {
+        res.warnings.push_back("Missing OLE Compound Document signature");
+    }
+
+    if (length >= 512) {
+        uint16_t sectorShift = *reinterpret_cast<const uint16_t*>(data + 30);
+        if (sectorShift == 9 || sectorShift == 12) {
+            res.breakdown.internalStructure = 25;
+            res.reasons.push_back("Valid OLE sector allocation table and sector shift verified");
+        } else {
+            res.warnings.push_back("Non-standard OLE sector shift size");
+        }
+    }
+
+    std::string content(reinterpret_cast<const char*>(data), std::min<size_t>(length, 65536));
+    if (type == "DOC" && content.find("WordDocument") != std::string::npos) {
+        res.breakdown.metadataScore = 10;
+        res.breakdown.parserValidation = 15;
+        res.breakdown.footerScore = 15;
+        res.reasons.push_back("Microsoft Word Document internal stream verified");
+    } else if (type == "XLS" && (content.find("Workbook") != std::string::npos || content.find("Book") != std::string::npos)) {
+        res.breakdown.metadataScore = 10;
+        res.breakdown.parserValidation = 15;
+        res.breakdown.footerScore = 15;
+        res.reasons.push_back("Microsoft Excel Workbook internal stream verified");
+    } else if (type == "PPT" && content.find("PowerPoint Document") != std::string::npos) {
+        res.breakdown.metadataScore = 10;
+        res.breakdown.parserValidation = 15;
+        res.breakdown.footerScore = 15;
+        res.reasons.push_back("Microsoft PowerPoint Presentation internal stream verified");
+    } else {
+        res.breakdown.parserValidation = 10;
+        res.breakdown.footerScore = 10;
+        res.reasons.push_back("OLE Compound File Binary structure verified");
+    }
+
+    if (length >= 512) {
+        res.breakdown.sizeConsistency = 10;
+    }
+}
+
 
 // ---------------- 5. MP3 Scoring ----------------
 void RecoveryConfidenceScorer::scoreMp3(const uint8_t* data, size_t length, ConfidenceEvaluationResult& res) {

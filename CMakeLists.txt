@@ -8,14 +8,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Export compile_commands.json for Clang LSP server (clangd)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-if(CMAKE_EXPORT_COMPILE_COMMANDS)
-    file(CREATE_LINK
-        "${CMAKE_BINARY_DIR}/compile_commands.json"
-        "${CMAKE_SOURCE_DIR}/compile_commands.json"
-        SYMBOLIC
-        COPY_ON_ERROR
-    )
-endif()
+
 
 find_package(Threads REQUIRED)
 
@@ -33,6 +26,12 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # Backend subdirectory
 add_subdirectory(backend)
+
+# GUI frontend (Dear ImGui + GLFW)
+option(BUILD_GUI "Build ForensiVault Dear ImGui graphical interface" ON)
+if(BUILD_GUI)
+    add_subdirectory(gui)
+endif()
 
 # Unit tests (Disabled by default)
 option(BUILD_TESTING "Build automated unit test suite" OFF)

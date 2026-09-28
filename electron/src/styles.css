@@ -1,0 +1,574 @@
+/* ==========================================================================
+   ForensiVault — Floating Neumorphism in Pure Cream & Orange
+   Floating Frames & Tactile Levitation Buttons
+   Apple San Francisco Typography Stack
+   ========================================================================== */
+
+:root {
+    /* Palette: Strictly Cream & Orange */
+    --bg-base: #F3EFE9;          /* Warm Cream Canvas */
+    --surface-card: #FAF7F2;     /* Elevated Soft Cream Card */
+    --surface-sunken: #E9E2D7;   /* Sunken Inset Surface */
+    
+    /* Floating Neumorphic Lighting & Shadows */
+    --shadow-light: #FFFFFF;
+    --shadow-dark: #D0C6B6;
+    --shadow-dark-deep: rgba(198, 187, 172, 0.85);
+    --border-soft: rgba(216, 206, 192, 0.55);
+    --border-highlight: rgba(255, 255, 255, 0.95);
+
+    /* Orange Accents */
+    --orange-primary: #FA701F;
+    --orange-hover: #FF8733;
+    --orange-active: #E05A0C;
+    --orange-tint: #FEEDDA;
+    --orange-gradient: linear-gradient(135deg, #FF7B25 0%, #EA580C 100%);
+    --orange-shadow-float: 0 10px 26px rgba(234, 88, 12, 0.38);
+
+    /* Typography */
+    --text-primary: #201A15;     /* Deep Espresso */
+    --text-muted: #7A6F64;       /* Soft Taupe */
+    --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "San Francisco", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --font-mono: "SF Mono", Consolas, "Courier New", monospace;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    font-family: var(--font-stack);
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 15px;
+    line-height: 1.5;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+}
+
+/* ==========================================================================
+   1. Floating Header Frame
+   ========================================================================== */
+
+.app-header {
+    background-color: var(--surface-card);
+    margin: 14px 20px 0 20px;
+    padding: 12px 26px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 8px 10px 24px var(--shadow-dark), -8px -8px 24px var(--shadow-light), inset 0 1px 1px rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--border-highlight);
+    z-index: 10;
+}
+
+.brand-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.brand-logo {
+    width: 36px;
+    height: 36px;
+    background: var(--orange-gradient);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 16px rgba(234, 88, 12, 0.36), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+}
+
+.brand-logo svg {
+    width: 20px;
+    height: 20px;
+    fill: #ffffff;
+}
+
+.brand-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--orange-primary);
+    letter-spacing: -0.3px;
+}
+
+/* Floating Badge */
+.badge {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--orange-primary);
+    background: linear-gradient(145deg, #FFFDFB, #EDE7DC);
+    border: 1px solid var(--border-highlight);
+    box-shadow: 4px 5px 12px var(--shadow-dark), -4px -4px 12px var(--shadow-light), inset 0 1px 1px rgba(255, 255, 255, 0.9);
+}
+
+/* ==========================================================================
+   2. Floating Frames Layout (Sidebar & Main Workspace)
+   ========================================================================== */
+
+.app-container {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    padding: 16px 20px 20px 20px;
+    gap: 20px;
+}
+
+/* Floating Sidebar Frame */
+.app-sidebar {
+    width: 245px;
+    background-color: var(--surface-card);
+    border-radius: 22px;
+    padding: 20px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 10px 12px 28px var(--shadow-dark), -10px -10px 28px var(--shadow-light), inset 0 1px 2px rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--border-highlight);
+    overflow-y: auto;
+}
+
+.nav-section-title {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--text-muted);
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+    padding: 12px 10px 4px;
+}
+
+/* Floating Navigation Items (Mini-Keys) */
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 16px;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    background: linear-gradient(145deg, #FFFDFB, #EDE7DC);
+    box-shadow: 4px 5px 12px var(--shadow-dark), -4px -4px 12px var(--shadow-light), inset 0 1px 1px rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--border-highlight);
+    transition: all 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.nav-item:hover {
+    color: var(--orange-primary);
+    transform: translateY(-2px);
+    box-shadow: 6px 8px 18px var(--shadow-dark), -6px -6px 18px var(--shadow-light);
+}
+
+.nav-item.active {
+    background: var(--orange-gradient);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 5px 7px 20px rgba(234, 88, 12, 0.42), -3px -3px 10px var(--shadow-light), inset 0 1px 2px rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+.nav-item svg {
+    width: 17px;
+    height: 17px;
+    fill: currentColor;
+    flex-shrink: 0;
+}
+
+/* Floating Workspace Frame */
+.app-workspace {
+    flex: 1;
+    background-color: var(--surface-card);
+    border-radius: 22px;
+    padding: 26px 28px;
+    box-shadow: 10px 12px 28px var(--shadow-dark), -10px -10px 28px var(--shadow-light), inset 0 1px 2px rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--border-highlight);
+    overflow-y: auto;
+}
+
+.module-header {
+    margin-bottom: 22px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.module-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+}
+
+/* ==========================================================================
+   3. Floating Neumorphic Cards
+   ========================================================================== */
+
+.neu-card {
+    background-color: var(--surface-card);
+    border-radius: 18px;
+    padding: 22px;
+    margin-bottom: 20px;
+    box-shadow: 7px 9px 22px var(--shadow-dark), -7px -7px 22px var(--shadow-light), inset 0 1px 1px rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--border-highlight);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.neu-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 9px 12px 26px var(--shadow-dark), -9px -9px 26px var(--shadow-light);
+}
+
+.neu-card-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 14px;
+}
+
+/* Dashboard Dual-Domain Split Floating Cards */
+.dual-domain-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+}
+
+.domain-card {
+    padding: 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.domain-header {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.domain-title {
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.domain-actions-vertical {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* ==========================================================================
+   4. Floating Neumorphic Buttons
+   ========================================================================== */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px;
+    border-radius: 14px;
+    font-family: var(--font-stack);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid var(--border-highlight);
+    outline: none;
+    transition: all 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    position: relative;
+}
+
+/* Floating Secondary Button (Tactile Cream Pebble) */
+.btn-secondary {
+    background: linear-gradient(145deg, #FFFDFB, #EDE7DC);
+    color: var(--text-primary);
+    box-shadow: 5px 7px 18px var(--shadow-dark), -5px -5px 18px var(--shadow-light), inset 0 1px 1px rgba(255, 255, 255, 0.95);
+}
+
+.btn-secondary:hover {
+    color: var(--orange-primary);
+    transform: translateY(-3px);
+    box-shadow: 8px 12px 26px var(--shadow-dark), -8px -8px 26px var(--shadow-light);
+}
+
+.btn-secondary:active {
+    transform: translateY(2px);
+    box-shadow: inset 3px 3px 7px var(--shadow-dark), inset -3px -3px 7px var(--shadow-light);
+}
+
+/* Floating Primary Button (Radiant Orange Levitation) */
+.btn-primary {
+    background: var(--orange-gradient);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: 6px 8px 22px rgba(234, 88, 12, 0.42), -5px -5px 16px var(--shadow-light), inset 0 1px 2px rgba(255, 255, 255, 0.55);
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #FF8733 0%, #F97316 100%);
+    transform: translateY(-3px);
+    box-shadow: 8px 14px 30px rgba(234, 88, 12, 0.52), -6px -6px 20px var(--shadow-light);
+}
+
+.btn-primary:active {
+    transform: translateY(2px);
+    box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.32);
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: 2px 2px 6px var(--shadow-dark), -2px -2px 6px var(--shadow-light) !important;
+}
+
+/* ==========================================================================
+   5. Sunken Insets (Contrasting with Floating Elements)
+   ========================================================================== */
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-label {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.input-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+/* Deep Sunken Input Well */
+.neu-input {
+    flex: 1;
+    background-color: var(--surface-sunken);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 11px 16px;
+    font-family: var(--font-stack);
+    font-size: 14px;
+    color: var(--text-primary);
+    box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.neu-input:focus {
+    border-color: var(--orange-primary);
+    background-color: #EDE7DC;
+    box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light), 0 0 0 2px rgba(250, 112, 31, 0.2);
+}
+
+/* Floating Radio Options */
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: linear-gradient(145deg, #FFFDFB, #EDE7DC);
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    cursor: pointer;
+    box-shadow: 4px 5px 14px var(--shadow-dark), -4px -4px 14px var(--shadow-light);
+    border: 1px solid var(--border-highlight);
+    transition: all 0.2s ease;
+}
+
+.radio-label:hover {
+    transform: translateY(-2px);
+    box-shadow: 6px 8px 18px var(--shadow-dark), -6px -6px 18px var(--shadow-light);
+    color: var(--orange-primary);
+}
+
+.radio-label input[type="radio"] {
+    accent-color: var(--orange-primary);
+    width: 17px;
+    height: 17px;
+}
+
+/* Deep Sunken Progress Track */
+.progress-track {
+    background-color: var(--surface-sunken);
+    height: 18px;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+    margin-top: 12px;
+}
+
+.progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--orange-gradient);
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(234, 88, 12, 0.4);
+    transition: width 0.22s ease;
+}
+
+.progress-text-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+/* Floating Table Container */
+.table-responsive {
+    border-radius: 14px;
+    box-shadow: inset 2px 2px 6px var(--shadow-dark), inset -2px -2px 6px var(--shadow-light);
+    background-color: var(--surface-sunken);
+    overflow-x: auto;
+    padding: 2px;
+}
+
+.neu-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    text-align: left;
+    background-color: var(--surface-card);
+}
+
+.neu-table th {
+    background-color: var(--surface-sunken);
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.neu-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-soft);
+    color: var(--text-primary);
+}
+
+.neu-table tr:last-child td {
+    border-bottom: none;
+}
+
+.neu-table tr:hover td {
+    background-color: var(--orange-tint);
+}
+
+/* Deep Sunken Console Box */
+.console-box {
+    background-color: var(--surface-sunken);
+    color: var(--text-primary);
+    padding: 14px 18px;
+    border-radius: 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.55;
+    max-height: 240px;
+    overflow-y: auto;
+    box-shadow: inset 3px 3px 7px var(--shadow-dark), inset -3px -3px 7px var(--shadow-light);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* Floating Modal Dialog */
+.modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(32, 26, 21, 0.45);
+    backdrop-filter: blur(4px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.modal-backdrop.active {
+    display: flex;
+}
+
+.modal-box {
+    width: 450px;
+    background-color: var(--surface-card);
+    border-radius: 22px;
+    padding: 28px;
+    box-shadow: 16px 20px 40px rgba(0, 0, 0, 0.22), -10px -10px 30px var(--shadow-light);
+    border: 1px solid var(--border-highlight);
+    animation: floatIn 0.22s ease-out;
+}
+
+@keyframes floatIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.modal-header {
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--orange-primary);
+    margin-bottom: 14px;
+}
+
+.modal-body {
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-bottom: 22px;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Floating Toast Notification */
+.toast-notice {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    padding: 14px 22px;
+    border-radius: 14px;
+    background-color: var(--surface-card);
+    color: var(--text-primary);
+    border: 1px solid var(--orange-primary);
+    box-shadow: 8px 12px 28px var(--shadow-dark), -6px -6px 20px var(--shadow-light);
+    font-size: 14px;
+    font-weight: 600;
+    z-index: 999;
+    animation: floatIn 0.25s ease-out;
+}
