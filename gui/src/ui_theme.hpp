@@ -90,8 +90,25 @@ public:
     // Formatting Helpers
     static std::string formatByteSize(uint64_t bytes);
 
-    // Card Shadow Effect
+    // Neumorphic Elevation & Sunken Shadow Effects
     static void renderCardShadow(const ImVec2& minPos, const ImVec2& maxPos, float rounding = 12.0f);
+    static void renderSunkenShadow(const ImVec2& minPos, const ImVec2& maxPos, float rounding = 8.0f);
+
+    // Responsive Fluid Layout Helpers (guarantees zero boundary overflow)
+    static bool renderInputWithButton(const char* inputId, char* buffer, size_t bufferSize,
+                                      const char* buttonLabel, float buttonWidth = 140.0f,
+                                      bool isPassword = false, ImGuiInputTextFlags extraFlags = 0);
+
+    static void renderInputWithTwoButtons(const char* inputId, char* buffer, size_t bufferSize,
+                                          const char* btn1Label, float btn1W, bool* btn1Clicked,
+                                          const char* btn2Label, float btn2W, bool* btn2Clicked,
+                                          ImGuiInputTextFlags extraFlags = 0);
+
+    static void renderResponsiveButtonPair(const char* btn1Label, bool (*btn1Func)(const char*, const ImVec2&),
+                                           float btn1W, bool* btn1Clicked,
+                                           const char* btn2Label, bool (*btn2Func)(const char*, const ImVec2&),
+                                           float btn2W, bool* btn2Clicked,
+                                           float minAvailW = 520.0f, float btnH = 36.0f);
 };
 
 } // namespace forensivault::gui

@@ -102,8 +102,19 @@ void ViewRecoveredFiles::render() {
     ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Showing %zu of %zu recovered artifacts",
                        filtered.size(), filesCopy.size());
 
-    ImGui::SameLine(ImGui::GetWindowWidth() - 320.0f);
-    if (UITheme::renderSecondaryButton("Export Manifest (.csv)...", ImVec2(180, 32))) {
+    float exportBtnW = 180.0f;
+    float clearBtnW = 115.0f;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+    float totalBtnsW = exportBtnW + clearBtnW + spacing;
+    float targetX = ImGui::GetWindowWidth() - totalBtnsW - 24.0f;
+
+    if (targetX > ImGui::GetCursorPosX() + 16.0f) {
+        ImGui::SameLine(targetX);
+    } else {
+        ImGui::Spacing();
+    }
+
+    if (UITheme::renderSecondaryButton("Export Manifest (.csv)...", ImVec2(exportBtnW, 32))) {
         std::string savePath = FileDialog::saveFile("Export Artifact Manifest", "artifact_manifest.csv", "CSV Files (*.csv)", "*.csv;*.*");
         if (!savePath.empty()) {
             std::ofstream out(savePath);
@@ -120,8 +131,8 @@ void ViewRecoveredFiles::render() {
         }
     }
 
-    ImGui::SameLine();
-    if (UITheme::renderGhostButton("Clear Registry", ImVec2(110, 32))) {
+    ImGui::SameLine(0.0f, spacing);
+    if (UITheme::renderGhostButton("Clear Registry", ImVec2(clearBtnW, 32))) {
         std::lock_guard<std::mutex> lock(ctx.registryMutex);
         ctx.recoveredFilesRegistry.clear();
     }

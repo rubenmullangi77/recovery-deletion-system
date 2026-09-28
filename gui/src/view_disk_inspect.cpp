@@ -45,12 +45,7 @@ void ViewDiskInspect::render() {
 void ViewDiskInspect::renderInputs() {
     if (UITheme::beginCard("InspectInputCard", "Target Disk Image or Block Device", "EVIDENCE SOURCE", UITheme::COLOR_BLUE)) {
         ImGui::Text("Target Disk Image or Block Device:");
-        ImGui::PushItemWidth(-140);
-        ImGui::InputText("##InspectPath", imagePathBuffer_, sizeof(imagePathBuffer_));
-        ImGui::PopItemWidth();
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Image...", ImVec2(130, 32))) {
+        if (UITheme::renderInputWithButton("##InspectPath", imagePathBuffer_, sizeof(imagePathBuffer_), "Browse Image...", 140.0f)) {
             std::string selected = FileDialog::openFile("Select Disk Image", "Disk Images (*.img;*.dd;*.raw;*.iso;*.*)", "*.img;*.dd;*.raw;*.iso;*.*");
             if (!selected.empty()) {
                 std::strncpy(imagePathBuffer_, selected.c_str(), sizeof(imagePathBuffer_) - 1);
@@ -67,7 +62,13 @@ void ViewDiskInspect::renderInputs() {
 
         if (!canInspect) ImGui::BeginDisabled();
 
-        if (UITheme::renderSecondaryButton("Inspect Disk Geometry", ImVec2(220, 36))) {
+        float actAvailW = ImGui::GetContentRegionAvail().x;
+        float actSpacing = ImGui::GetStyle().ItemSpacing.x;
+        bool stackAct = (actAvailW < 560.0f);
+        float aBtn1W = stackAct ? -1.0f : 220.0f;
+        float aBtn2W = stackAct ? -1.0f : 320.0f;
+
+        if (UITheme::renderSecondaryButton("Inspect Disk Geometry", ImVec2(aBtn1W, 36))) {
             hasGeometry_ = false;
             hasHashes_ = false;
             geomError_.clear();
@@ -93,9 +94,10 @@ void ViewDiskInspect::renderInputs() {
             }
         }
 
-        ImGui::SameLine();
+        if (!stackAct) ImGui::SameLine(0.0f, actSpacing);
+        else ImGui::Dummy(ImVec2(0, 4.0f));
 
-        if (UITheme::renderPrimaryButton("Compute Cryptographic Evidence Hashes...", ImVec2(320, 36))) {
+        if (UITheme::renderPrimaryButton("Compute Cryptographic Evidence Hashes...", ImVec2(aBtn2W, 36))) {
             hasHashes_ = false;
             std::string path = imagePathBuffer_;
 

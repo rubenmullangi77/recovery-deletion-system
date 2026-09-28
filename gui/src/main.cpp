@@ -161,6 +161,12 @@ int main(int argc, char* argv[]) {
             rightItemsWidth += ImGui::CalcTextSize(opText.c_str()).x + 32.0f;
         }
 
+        std::string userBadge;
+        if (appCtx.isAuthenticated) {
+            userBadge = "Examiner: " + appCtx.currentUsername;
+            rightItemsWidth += ImGui::CalcTextSize(userBadge.c_str()).x + 32.0f + 115.0f + 16.0f; // badge + Lock Station button
+        }
+
         std::string platBadge = "[" + appCtx.platformName + "]";
         rightItemsWidth += ImGui::CalcTextSize(platBadge.c_str()).x + 32.0f;
 

@@ -27,16 +27,18 @@ void ViewAuditLog::render() {
 
     // Action Toolbar Card
     if (UITheme::beginCard("AuditToolbarCard", "Journal Management & Cryptographic Chain Verification", "CHAIN OF CUSTODY", UITheme::COLOR_ORANGE)) {
-        if (UITheme::renderSecondaryButton("Refresh Entries", ImVec2(160, 34))) {
+        float availW = ImGui::GetContentRegionAvail().x;
+        float spacing = ImGui::GetStyle().ItemSpacing.x;
+
+        if (UITheme::renderSecondaryButton("Refresh Entries", ImVec2(150, 34))) {
             refreshLog();
         }
-
-        ImGui::SameLine();
+        ImGui::SameLine(0.0f, spacing);
 
         size_t brokenIdx = 0;
         bool chainIntact = forensivault::logging::AuditLogger::getInstance().verifyChain(&brokenIdx);
 
-        if (UITheme::renderSecondaryButton("Verify Chain Integrity", ImVec2(200, 34))) {
+        if (UITheme::renderSecondaryButton("Verify Chain Integrity", ImVec2(190, 34))) {
             if (chainIntact) {
                 AppContext::getInstance().postNotification(
                     Notification::Type::SUCCESS, "Audit Chain Verified",
@@ -47,20 +49,20 @@ void ViewAuditLog::render() {
                     "Hash mismatch detected at journal index " + std::to_string(brokenIdx));
             }
         }
+        ImGui::SameLine(0.0f, spacing);
 
-        ImGui::SameLine();
         if (chainIntact) {
             UITheme::renderBadge("CHAIN INTACT [100% VERIFIED]", UITheme::COLOR_GREEN);
         } else {
             UITheme::renderBadge("TAMPER DETECTED [INVALID HASH]", UITheme::COLOR_RED);
         }
 
-        float actionBtnsW = 350.0f;
-        float targetX = ImGui::GetWindowWidth() - actionBtnsW - 24.0f;
-        if (targetX > ImGui::GetCursorPosX() + 16.0f) {
+        float exportBtnsW = 160.0f + 180.0f + spacing;
+        float targetX = ImGui::GetWindowWidth() - exportBtnsW - 24.0f;
+        if (availW > 880.0f && targetX > ImGui::GetCursorPosX() + 16.0f) {
             ImGui::SameLine(targetX);
         } else {
-            ImGui::Spacing();
+            ImGui::Dummy(ImVec2(0, 6.0f));
         }
 
         if (UITheme::renderSecondaryButton("Export Log (.txt)...", ImVec2(160, 34))) {
@@ -78,7 +80,7 @@ void ViewAuditLog::render() {
             }
         }
 
-        ImGui::SameLine();
+        ImGui::SameLine(0.0f, spacing);
 
         if (UITheme::renderPrimaryButton("Generate PDF Report", ImVec2(180, 34))) {
             forensivault::reporting::ForensicReport rep;

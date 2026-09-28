@@ -56,21 +56,20 @@ void ViewDriveSanitizer::render() {
 void ViewDriveSanitizer::renderDeviceSelection() {
     if (UITheme::beginCard("DriveSelectCard", "Storage Device / Image Selection", "DRIVE TARGET", UITheme::COLOR_ORANGE)) {
         ImGui::Text("Target Disk Image or Block Device Path (e.g. \\\\.\\PhysicalDrive1 or /evidence/drive.dd):");
-        ImGui::PushItemWidth(-260);
-        bool changed = ImGui::InputText("##TargetDrive", targetDriveBuffer_, sizeof(targetDriveBuffer_));
-        ImGui::PopItemWidth();
+        bool browseClicked = false, refreshClicked = false;
+        UITheme::renderInputWithTwoButtons("##TargetDrive", targetDriveBuffer_, sizeof(targetDriveBuffer_),
+                                           "Browse Image...", 130.0f, &browseClicked,
+                                           "Refresh Drives", 130.0f, &refreshClicked);
 
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Image...", ImVec2(120, 32))) {
+        bool changed = false;
+        if (browseClicked) {
             std::string selected = FileDialog::openFile("Select Disk Image", "Disk Images (*.img;*.dd;*.raw;*.iso;*.bin)", "*.img;*.dd;*.raw;*.iso;*.bin;*.*");
             if (!selected.empty()) {
                 std::strncpy(targetDriveBuffer_, selected.c_str(), sizeof(targetDriveBuffer_) - 1);
                 changed = true;
             }
         }
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Refresh Drives", ImVec2(120, 32))) {
+        if (refreshClicked) {
             attachedDevices_ = forensivault::api::DriveSanitizerAPI::detectDevices();
         }
 
@@ -203,19 +202,20 @@ void ViewDriveSanitizer::renderConfirmationModal() {
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(540, 310));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(480, 240), ImVec2(720, 800));
 
-    if (ImGui::BeginPopupModal("Permanent Drive Destruction Warning", &showConfirmModal_, ImGuiWindowFlags_NoResize)) {
+    if (ImGui::BeginPopupModal("Permanent Drive Destruction Warning", &showConfirmModal_, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextColored(UITheme::COLOR_RED, "CRITICAL WARNING: PERMANENT STORAGE DEVICE ERASURE");
         ImGui::Separator();
         ImGui::Spacing();
-        ImGui::TextWrapped("This will irreversibly overwrite ALL addressable sectors on the target storage device. "
-                           "Every partition table, file system, boot record, and unallocated cluster will be erased.");
+        UITheme::renderWrappedText("This will irreversibly overwrite ALL addressable sectors on the target storage device. "
+                           "Every partition table, file system, boot record, and unallocated cluster will be erased.", UITheme::COLOR_TEXT_SECONDARY);
         ImGui::Spacing();
-        ImGui::Text("Target Device: %s", targetDriveBuffer_);
+        UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "Target Device: %s", targetDriveBuffer_);
         ImGui::Spacing();
-        ImGui::Text("Type 'DESTROY' in uppercase to authorize drive sanitization:");
+        ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Type 'DESTROY' in uppercase to authorize drive sanitization:");
 
+        ImGui::SetNextItemWidth(-1);
         ImGui::InputText("##DriveDestroyConfirm", confirmInputBuffer_, sizeof(confirmInputBuffer_));
 
         bool matches = (std::strcmp(confirmInputBuffer_, "DESTROY") == 0);

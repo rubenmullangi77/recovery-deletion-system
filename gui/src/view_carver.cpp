@@ -40,12 +40,7 @@ void ViewCarver::render() {
 void ViewCarver::renderInputs() {
     if (UITheme::beginCard("CarverInputCard", "Evidence Source & Target Configuration", "CONFIGURATION", UITheme::COLOR_BLUE)) {
         ImGui::Text("Evidence Source File / Image (.img, .dd, .raw, .pdf, .docx, or any binary dump):");
-        ImGui::PushItemWidth(-140);
-        ImGui::InputText("##ImagePath", imagePathBuffer_, sizeof(imagePathBuffer_));
-        ImGui::PopItemWidth();
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Source...", ImVec2(130, 32))) {
+        if (UITheme::renderInputWithButton("##ImagePath", imagePathBuffer_, sizeof(imagePathBuffer_), "Browse Source...", 140.0f)) {
             std::string selected = FileDialog::openFile("Select Evidence Source File", "All Files (*.*)", "*.*");
             if (!selected.empty()) {
                 std::strncpy(imagePathBuffer_, selected.c_str(), sizeof(imagePathBuffer_) - 1);
@@ -54,12 +49,7 @@ void ViewCarver::renderInputs() {
 
         ImGui::Spacing();
         ImGui::Text("Extraction Destination Directory:");
-        ImGui::PushItemWidth(-140);
-        ImGui::InputText("##OutputDir", outputDirBuffer_, sizeof(outputDirBuffer_));
-        ImGui::PopItemWidth();
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Folder...", ImVec2(130, 32))) {
+        if (UITheme::renderInputWithButton("##OutputDir", outputDirBuffer_, sizeof(outputDirBuffer_), "Browse Folder...", 140.0f)) {
             std::string selected = FileDialog::openFolder("Select Output Recovery Folder");
             if (!selected.empty()) {
                 std::strncpy(outputDirBuffer_, selected.c_str(), sizeof(outputDirBuffer_) - 1);
@@ -68,9 +58,16 @@ void ViewCarver::renderInputs() {
 
         ImGui::Spacing();
         ImGui::Text("Extraction Confidence Threshold:");
+        float sliderAvail = ImGui::GetContentRegionAvail().x;
+        float sliderW = std::min(260.0f, sliderAvail);
+        ImGui::SetNextItemWidth(sliderW);
         ImGui::SliderFloat("##MinConfidence", &minConfidence_, 0.0f, 100.0f, "%.0f%%");
-        ImGui::SameLine();
-        ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "(Lower extracts more candidates; higher guarantees format integrity)");
+        if (sliderAvail > 550.0f) {
+            ImGui::SameLine();
+            ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "(Lower extracts more; higher guarantees format integrity)");
+        } else {
+            ImGui::TextColored(UITheme::COLOR_TEXT_MUTED, "(Lower extracts more candidates; higher guarantees format integrity)");
+        }
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -206,12 +203,30 @@ void ViewCarver::renderCarvedTable() {
     if (UITheme::beginCard("CarvedArtifactsCard", "Extracted Artifacts Table", "DISCOVERED FILES", UITheme::COLOR_BLUE)) {
         ImGui::Text("Filter Extracted Files:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(250);
-        ImGui::InputText("##CarverFilter", searchFilterBuffer_, sizeof(searchFilterBuffer_));
+        float availW = ImGui::GetContentRegionAvail().x;
+        float btnW = 180.0f;
+        float spacing = ImGui::GetStyle().ItemSpacing.x;
+        float filterInputW = std::min(260.0f, availW - btnW - spacing);
 
-        ImGui::SameLine(ImGui::GetWindowWidth() - 250);
-        if (UITheme::renderSecondaryButton("Open Output Folder", ImVec2(180, 30))) {
-            FileDialog::openFolderInExplorer(outputDirBuffer_);
+        if (filterInputW > 120.0f) {
+            ImGui::SetNextItemWidth(filterInputW);
+            ImGui::InputText("##CarverFilter", searchFilterBuffer_, sizeof(searchFilterBuffer_));
+            float targetX = ImGui::GetWindowWidth() - btnW - 24.0f;
+            if (targetX > ImGui::GetCursorPosX() + 12.0f) {
+                ImGui::SameLine(targetX);
+            } else {
+                ImGui::SameLine(0.0f, spacing);
+            }
+            if (UITheme::renderSecondaryButton("Open Output Folder", ImVec2(btnW, 30))) {
+                FileDialog::openFolderInExplorer(outputDirBuffer_);
+            }
+        } else {
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputText("##CarverFilter", searchFilterBuffer_, sizeof(searchFilterBuffer_));
+            ImGui::Dummy(ImVec2(0, 4.0f));
+            if (UITheme::renderSecondaryButton("Open Output Folder", ImVec2(-1, 30))) {
+                FileDialog::openFolderInExplorer(outputDirBuffer_);
+            }
         }
 
         std::string filterLower = searchFilterBuffer_;

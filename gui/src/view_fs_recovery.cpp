@@ -112,12 +112,7 @@ void ViewFsRecovery::renderDirectoryRecovery() {
     // 1. Directory Input & Mount Inspection Card
     if (UITheme::beginCard("DirInputCard", "Live Directory Recovery Target", "DIRECTORY", UITheme::COLOR_BLUE)) {
         ImGui::Text("Target Directory to Scan for Deleted Files & Folders:");
-        ImGui::PushItemWidth(-140);
-        ImGui::InputText("##TargetDirPath", targetDirBuffer_, sizeof(targetDirBuffer_));
-        ImGui::PopItemWidth();
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Folder...", ImVec2(130, 32))) {
+        if (UITheme::renderInputWithButton("##TargetDirPath", targetDirBuffer_, sizeof(targetDirBuffer_), "Browse Folder...", 140.0f)) {
             std::string selected = FileDialog::openFolder("Select Directory to Scan for Deleted Files");
             if (!selected.empty()) {
                 std::strncpy(targetDirBuffer_, selected.c_str(), sizeof(targetDirBuffer_) - 1);
@@ -346,12 +341,7 @@ void ViewFsRecovery::renderDirectoryRecovery() {
                 // 4. Output Destination & Extraction Card
                 if (UITheme::beginCard("DirRestoreCard", "Restore Destination & Execution", "RECOVERY", UITheme::COLOR_BLUE)) {
                     ImGui::Text("Destination Output Folder for Recovered Files:");
-                    ImGui::PushItemWidth(-140);
-                    ImGui::InputText("##DirOutputDir", dirOutputDirBuffer_, sizeof(dirOutputDirBuffer_));
-                    ImGui::PopItemWidth();
-
-                    ImGui::SameLine();
-                    if (UITheme::renderSecondaryButton("Browse Folder...", ImVec2(130, 32))) {
+                    if (UITheme::renderInputWithButton("##DirOutputDir", dirOutputDirBuffer_, sizeof(dirOutputDirBuffer_), "Browse Folder...", 140.0f)) {
                         std::string selected = FileDialog::openFolder("Select Output Destination Folder");
                         if (!selected.empty()) {
                             std::strncpy(dirOutputDirBuffer_, selected.c_str(), sizeof(dirOutputDirBuffer_) - 1);
@@ -481,12 +471,20 @@ void ViewFsRecovery::renderDirectoryRecovery() {
 
                 ImGui::TextColored(UITheme::COLOR_GREEN, "[OK] Recovered artifacts have been restored to: %s", dirOutputDirBuffer_);
                 
-                if (UITheme::renderSecondaryButton("Open Output Folder in File Explorer", ImVec2(260, 32))) {
+                float availW = ImGui::GetContentRegionAvail().x;
+                float spacing = ImGui::GetStyle().ItemSpacing.x;
+                bool stackBtns = (availW < 520.0f);
+                float btn1W = stackBtns ? -1.0f : 260.0f;
+                float btn2W = stackBtns ? -1.0f : 240.0f;
+
+                if (UITheme::renderSecondaryButton("Open Output Folder in File Explorer", ImVec2(btn1W, 34))) {
                     FileDialog::openFolderInExplorer(dirOutputDirBuffer_);
                 }
 
-                ImGui::SameLine();
-                if (UITheme::renderPrimaryButton("Generate PDF Forensic Report", ImVec2(240, 32))) {
+                if (!stackBtns) ImGui::SameLine(0.0f, spacing);
+                else ImGui::Dummy(ImVec2(0, 4.0f));
+
+                if (UITheme::renderPrimaryButton("Generate PDF Forensic Report", ImVec2(btn2W, 34))) {
                     forensivault::reporting::ForensicReport rep;
                     rep.report_id = "FS-REC-" + std::to_string(std::time(nullptr));
                     rep.report_timestamp_iso = forensivault::logging::AuditLogger::currentTimestampIso();
@@ -525,12 +523,7 @@ void ViewFsRecovery::renderDirectoryRecovery() {
 void ViewFsRecovery::renderImageRecovery() {
     if (UITheme::beginCard("FsInputCard", "Evidence Volume & Partition Setup", "INPUTS", UITheme::COLOR_BLUE)) {
         ImGui::Text("Target Evidence Disk Image:");
-        ImGui::PushItemWidth(-140);
-        ImGui::InputText("##FsImagePath", imagePathBuffer_, sizeof(imagePathBuffer_));
-        ImGui::PopItemWidth();
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Image...", ImVec2(130, 32))) {
+        if (UITheme::renderInputWithButton("##FsImagePath", imagePathBuffer_, sizeof(imagePathBuffer_), "Browse Image...", 140.0f)) {
             std::string selected = FileDialog::openFile("Select Evidence Image", "Disk Images (*.img;*.dd;*.raw;*.*)", "*.img;*.dd;*.raw;*.*");
             if (!selected.empty()) {
                 std::strncpy(imagePathBuffer_, selected.c_str(), sizeof(imagePathBuffer_) - 1);
@@ -541,12 +534,7 @@ void ViewFsRecovery::renderImageRecovery() {
 
         ImGui::Spacing();
         ImGui::Text("Output Recovery Directory:");
-        ImGui::PushItemWidth(-140);
-        ImGui::InputText("##FsOutputDir", outputDirBuffer_, sizeof(outputDirBuffer_));
-        ImGui::PopItemWidth();
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Folder...", ImVec2(130, 32))) {
+        if (UITheme::renderInputWithButton("##FsOutputDir", outputDirBuffer_, sizeof(outputDirBuffer_), "Browse Folder...", 140.0f)) {
             std::string selected = FileDialog::openFolder("Select Output Recovery Folder");
             if (!selected.empty()) {
                 std::strncpy(outputDirBuffer_, selected.c_str(), sizeof(outputDirBuffer_) - 1);
@@ -567,14 +555,21 @@ void ViewFsRecovery::renderImageRecovery() {
 
         if (!canProbe) ImGui::BeginDisabled();
 
-        if (UITheme::renderSecondaryButton("Probe Filesystem Structures", ImVec2(240, 36))) {
+        float actAvailW = ImGui::GetContentRegionAvail().x;
+        float actSpacing = ImGui::GetStyle().ItemSpacing.x;
+        bool stackProbe = (actAvailW < 540.0f);
+        float pBtn1W = stackProbe ? -1.0f : 240.0f;
+        float pBtn2W = stackProbe ? -1.0f : 280.0f;
+
+        if (UITheme::renderSecondaryButton("Probe Filesystem Structures", ImVec2(pBtn1W, 36))) {
             probedVolume_ = forensivault::api::FsRecoveryAPI::probeVolume(imagePathBuffer_, static_cast<uint64_t>(std::max(0, partitionOffset_)));
             hasProbed_ = true;
         }
 
-        ImGui::SameLine();
+        if (!stackProbe) ImGui::SameLine(0.0f, actSpacing);
+        else ImGui::Dummy(ImVec2(0, 4.0f));
 
-        if (UITheme::renderPrimaryButton("Execute Filesystem Recovery...", ImVec2(280, 36))) {
+        if (UITheme::renderPrimaryButton("Execute Filesystem Recovery...", ImVec2(pBtn2W, 36))) {
             hasRecoveryResult_ = false;
             std::string img = imagePathBuffer_;
             std::string out = outputDirBuffer_;

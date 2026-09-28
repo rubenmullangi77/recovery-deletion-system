@@ -270,12 +270,23 @@ void ViewLogin::render() {
         ImGui::Spacing();
         ImGui::Dummy(ImVec2(0, 4.0f));
 
-        // Security footer badges
+        // Security footer badges - cleanly aligned within card width
+        float availCardW = ImGui::GetContentRegionAvail().x;
+        float b1W = ImGui::CalcTextSize("PBKDF2-HMAC-SHA256").x + 28.0f;
+        float b2W = ImGui::CalcTextSize("256-bit CSPRNG Salt").x + 28.0f;
+        float pairW = b1W + b2W + 12.0f;
+        float offsetX = std::max(0.0f, (availCardW - pairW) * 0.5f);
+
+        if (offsetX > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offsetX);
         UITheme::renderBadge("PBKDF2-HMAC-SHA256", UITheme::COLOR_BLUE);
-        ImGui::SameLine();
-        UITheme::renderBadge("CSPRNG Salt (256-bit)", UITheme::COLOR_GREEN);
-        ImGui::SameLine();
-        UITheme::renderBadge("Tamper Proof (0600)", UITheme::COLOR_ORANGE);
+        ImGui::SameLine(0.0f, 12.0f);
+        UITheme::renderBadge("256-bit CSPRNG Salt", UITheme::COLOR_GREEN);
+
+        ImGui::Dummy(ImVec2(0, 4.0f));
+        float b3W = ImGui::CalcTextSize("Tamper-Evident Storage (0600)").x + 28.0f;
+        float offset3 = std::max(0.0f, (availCardW - b3W) * 0.5f);
+        if (offset3 > 0.0f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset3);
+        UITheme::renderBadge("Tamper-Evident Storage (0600)", UITheme::COLOR_ORANGE);
     }
 
     ImGui::EndChild();

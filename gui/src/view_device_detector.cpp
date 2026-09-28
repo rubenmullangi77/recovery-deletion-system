@@ -26,14 +26,22 @@ void ViewDeviceDetector::render() {
     }
 
     if (UITheme::beginCard("DevToolbarCard", "Hardware Bus Management", "SCAN CONTROLS", UITheme::COLOR_ORANGE)) {
-        if (UITheme::renderPrimaryButton("Rescan Physical Storage Devices", ImVec2(280, 34))) {
+        float availW = ImGui::GetContentRegionAvail().x;
+        float spacing = ImGui::GetStyle().ItemSpacing.x;
+        float btnW = (availW < 560.0f) ? -1.0f : 280.0f;
+
+        if (UITheme::renderPrimaryButton("Rescan Physical Storage Devices", ImVec2(btnW, 34))) {
             refreshDevices();
             AppContext::getInstance().postNotification(
                 Notification::Type::INFO, "Hardware Scan",
                 "Discovered " + std::to_string(devices_.size()) + " attached storage devices.");
         }
 
-        ImGui::SameLine();
+        if (availW >= 560.0f) {
+            ImGui::SameLine(0.0f, spacing);
+        } else {
+            ImGui::Dummy(ImVec2(0, 4.0f));
+        }
         ImGui::TextColored(UITheme::COLOR_TEXT_SECONDARY, "Total Attached Block Devices: %zu", devices_.size());
     }
     UITheme::endCard();

@@ -133,12 +133,7 @@ void ViewDirectoryRecovery::render() {
 void ViewDirectoryRecovery::renderDirectorySelector() {
     if (UITheme::beginCard("DirSelectorCard", "Target Directory Setup", "DIRECTORY", UITheme::COLOR_BLUE)) {
         ImGui::Text("Select Live Directory to Scan for Deleted Files & Folders:");
-        ImGui::PushItemWidth(-140);
-        ImGui::InputText("##TargetDirPath", targetDirBuffer_, sizeof(targetDirBuffer_));
-        ImGui::PopItemWidth();
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Folder...", ImVec2(130, 32))) {
+        if (UITheme::renderInputWithButton("##TargetDirPath", targetDirBuffer_, sizeof(targetDirBuffer_), "Browse Folder...", 140.0f)) {
             std::string selected = FileDialog::openFolder("Select Directory to Scan for Deleted Files");
             if (!selected.empty()) {
                 std::strncpy(targetDirBuffer_, selected.c_str(), sizeof(targetDirBuffer_) - 1);
@@ -451,12 +446,7 @@ void ViewDirectoryRecovery::renderRecoveryExecution() {
 
     if (UITheme::beginCard("DirRestoreCard", "Restoration Destination & Execution", "RECOVERY", UITheme::COLOR_BLUE)) {
         ImGui::Text("Destination Output Folder for Recovered Files & Folders:");
-        ImGui::PushItemWidth(-140);
-        ImGui::InputText("##DirOutputDir", outputDirBuffer_, sizeof(outputDirBuffer_));
-        ImGui::PopItemWidth();
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Folder...", ImVec2(130, 32))) {
+        if (UITheme::renderInputWithButton("##DirOutputDir", outputDirBuffer_, sizeof(outputDirBuffer_), "Browse Folder...", 140.0f)) {
             std::string selected = FileDialog::openFolder("Select Output Destination Folder");
             if (!selected.empty()) {
                 std::strncpy(outputDirBuffer_, selected.c_str(), sizeof(outputDirBuffer_) - 1);
@@ -573,19 +563,63 @@ void ViewDirectoryRecovery::renderRecoveryExecution() {
                 
                 ImGui::Spacing();
 
-                if (UITheme::renderSecondaryButton("Open Output Folder in File Explorer", ImVec2(280, 34))) {
-                    FileDialog::openFolderInExplorer(outputDirBuffer_);
-                }
+                float availW = ImGui::GetContentRegionAvail().x;
+                float spacing = ImGui::GetStyle().ItemSpacing.x;
 
-                ImGui::SameLine();
+                if (availW < 720.0f) {
+                    float subW = (availW - spacing) * 0.5f;
+                    if (subW < 130.0f) subW = -1.0f;
 
-                if (UITheme::renderPrimaryButton("View in Evidence Browser ->", ImVec2(220, 34))) {
-                    AppContext::getInstance().activeTab = ModuleTab::RECOVERED_FILES;
-                }
+                    if (UITheme::renderSecondaryButton("Open Output Folder", ImVec2(subW, 34))) {
+                        FileDialog::openFolderInExplorer(outputDirBuffer_);
+                    }
 
-                ImGui::SameLine();
+                    if (subW > 0.0f) ImGui::SameLine(0.0f, spacing);
+                    else ImGui::Dummy(ImVec2(0, 4.0f));
 
-                if (UITheme::renderSecondaryButton("Generate PDF Report", ImVec2(190, 34))) {
+                    if (UITheme::renderPrimaryButton("View in Evidence Browser ->", ImVec2(subW, 34))) {
+                        AppContext::getInstance().activeTab = ModuleTab::RECOVERED_FILES;
+                    }
+
+                    ImGui::Dummy(ImVec2(0, 4.0f));
+                    if (UITheme::renderSecondaryButton("Generate PDF Forensic Report", ImVec2(-1, 34))) {
+                        forensivault::reporting::ForensicReport rep;
+                        rep.report_id = "DIR-REC-" + std::to_string(std::time(nullptr));
+                        rep.report_timestamp_iso = forensivault::logging::AuditLogger::currentTimestampIso();
+                        rep.case_info.case_id = "CASE-DIR-RECOVERY";
+                        rep.case_info.case_name = "Directory Recovery Extraction";
+                        rep.case_info.investigator_name = AppContext::getInstance().currentUsername.empty() ? "Forensic Examiner" : AppContext::getInstance().currentUsername;
+                        rep.case_info.agency = "Digital Forensics Unit";
+                        rep.acquisition.source_path = targetDirBuffer_;
+                        rep.acquisition.total_bytes = recRes.recoveredBytes;
+                        for (const auto& it : scanResult_.items) {
+                            forensivault::reporting::ReportItem rItem;
+                            rItem.filename = it.filename;
+                            rItem.relative_path = it.originalPath;
+                            rItem.size_bytes = it.sizeBytes;
+                            rItem.file_type = it.extension;
+                            rItem.confidence_level = "VERIFIED";
+                            rep.recovered_items.push_back(rItem);
+                        }
+                        rep.audit_trail = forensivault::logging::AuditLogger::getInstance().getEntries();
+                        std::string reportsDir = forensivault::core::Platform::getReportsDirectory();
+                        auto res = forensivault::reporting::ReportGenerator::saveReportPackage(rep, reportsDir, true);
+                        if (res.pdf_saved) {
+                            AppContext::getInstance().postNotification(
+                                Notification::Type::SUCCESS, "PDF Report Generated",
+                                "Saved court-admissible PDF to: " + res.pdf_path);
+                        }
+                    }
+                } else {
+                    if (UITheme::renderSecondaryButton("Open Output Folder", ImVec2(240, 34))) {
+                        FileDialog::openFolderInExplorer(outputDirBuffer_);
+                    }
+                    ImGui::SameLine(0.0f, spacing);
+                    if (UITheme::renderPrimaryButton("View in Evidence Browser ->", ImVec2(230, 34))) {
+                        AppContext::getInstance().activeTab = ModuleTab::RECOVERED_FILES;
+                    }
+                    ImGui::SameLine(0.0f, spacing);
+                    if (UITheme::renderSecondaryButton("Generate PDF Report", ImVec2(190, 34))) {
                     forensivault::reporting::ForensicReport rep;
                     rep.report_id = "DIR-REC-" + std::to_string(std::time(nullptr));
                     rep.report_timestamp_iso = forensivault::logging::AuditLogger::currentTimestampIso();
@@ -613,6 +647,7 @@ void ViewDirectoryRecovery::renderRecoveryExecution() {
                             "Saved court-admissible PDF to: " + res.pdf_path);
                     }
                 }
+            }
             } else {
                 UITheme::renderDangerBanner(recRes.errorMessage.c_str());
             }

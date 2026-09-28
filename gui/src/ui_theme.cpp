@@ -370,9 +370,12 @@ bool UITheme::beginCard(const char* cardId, const char* title, const char* badge
 
 void UITheme::endCard() {
     ImGui::EndChild();
+    ImVec2 pMin = ImGui::GetItemRectMin();
+    ImVec2 pMax = ImGui::GetItemRectMax();
+    renderCardShadow(pMin, pMax, 10.0f);
     ImGui::PopStyleVar(3);
     ImGui::PopStyleColor(2);
-    ImGui::Dummy(ImVec2(0.0f, 12.0f)); // Clean spacious margin between stacked cards
+    ImGui::Dummy(ImVec2(0.0f, 16.0f)); // Clean spacious margin between stacked cards
 }
 
 void UITheme::renderCardHeader(const char* title, const char* subtitle) {
@@ -667,18 +670,142 @@ void UITheme::renderCardShadow(const ImVec2& minPos, const ImVec2& maxPos, float
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     if (!drawList) return;
 
-    // Subtle dual-tone bevel
+    // Specular top-left highlight bevel
     drawList->AddRect(
         ImVec2(minPos.x - 1.0f, minPos.y - 1.0f),
         ImVec2(maxPos.x + 1.0f, maxPos.y + 1.0f),
         ImColor(COLOR_SHADOW_LIGHT),
         rounding, 0, 1.0f);
 
+    // Multi-tier diffuse ambient bottom-right drop shadow
+    drawList->AddRect(
+        ImVec2(minPos.x, minPos.y + 1.0f),
+        ImVec2(maxPos.x + 1.0f, maxPos.y + 2.0f),
+        ImColor(COLOR_SHADOW_DARK.x, COLOR_SHADOW_DARK.y, COLOR_SHADOW_DARK.z, COLOR_SHADOW_DARK.w * 0.7f),
+        rounding, 0, 1.5f);
+
+    drawList->AddRect(
+        ImVec2(minPos.x + 1.0f, minPos.y + 2.0f),
+        ImVec2(maxPos.x + 2.0f, maxPos.y + 4.0f),
+        ImColor(COLOR_SHADOW_DARK.x, COLOR_SHADOW_DARK.y, COLOR_SHADOW_DARK.z, COLOR_SHADOW_DARK.w * 0.35f),
+        rounding, 0, 2.0f);
+}
+
+void UITheme::renderSunkenShadow(const ImVec2& minPos, const ImVec2& maxPos, float rounding) {
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    if (!drawList) return;
+
+    // Recessed top-left inner shadow
     drawList->AddRect(
         ImVec2(minPos.x + 1.0f, minPos.y + 1.0f),
-        ImVec2(maxPos.x + 2.0f, maxPos.y + 2.0f),
-        ImColor(COLOR_SHADOW_DARK),
+        ImVec2(maxPos.x - 1.0f, maxPos.y - 1.0f),
+        ImColor(COLOR_SHADOW_DARK.x, COLOR_SHADOW_DARK.y, COLOR_SHADOW_DARK.z, 0.35f),
         rounding, 0, 1.0f);
+
+    // Bottom-right inner reflection
+    drawList->AddLine(
+        ImVec2(minPos.x + rounding, maxPos.y),
+        ImVec2(maxPos.x - rounding, maxPos.y),
+        ImColor(COLOR_SHADOW_LIGHT), 1.0f);
+}
+
+bool UITheme::renderInputWithButton(const char* inputId, char* buffer, size_t bufferSize,
+                                    const char* buttonLabel, float buttonWidth,
+                                    bool isPassword, ImGuiInputTextFlags extraFlags) {
+    float availW = ImGui::GetContentRegionAvail().x;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+    float inputW = availW - buttonWidth - spacing;
+
+    if (inputW < 120.0f) {
+        // Fallback for cramped containers: stack vertically with full width
+        ImGui::SetNextItemWidth(availW);
+        ImGuiInputTextFlags flags = extraFlags;
+        if (isPassword) flags |= ImGuiInputTextFlags_Password;
+        ImGui::InputText(inputId, buffer, bufferSize, flags);
+        ImGui::Dummy(ImVec2(0, 4.0f));
+        return renderSecondaryButton(buttonLabel, ImVec2(availW, 34.0f));
+    }
+
+    ImGui::SetNextItemWidth(inputW);
+    ImGuiInputTextFlags flags = extraFlags;
+    if (isPassword) flags |= ImGuiInputTextFlags_Password;
+    ImGui::InputText(inputId, buffer, bufferSize, flags);
+
+    ImGui::SameLine(0.0f, spacing);
+    return renderSecondaryButton(buttonLabel, ImVec2(buttonWidth, 34.0f));
+}
+
+void UITheme::renderInputWithTwoButtons(const char* inputId, char* buffer, size_t bufferSize,
+                                        const char* btn1Label, float btn1W, bool* btn1Clicked,
+                                        const char* btn2Label, float btn2W, bool* btn2Clicked,
+                                        ImGuiInputTextFlags extraFlags) {
+    if (btn1Clicked) *btn1Clicked = false;
+    if (btn2Clicked) *btn2Clicked = false;
+
+    float availW = ImGui::GetContentRegionAvail().x;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+    float totalBtnW = btn1W + btn2W + (2.0f * spacing);
+    float inputW = availW - totalBtnW;
+
+    if (inputW < 140.0f) {
+        // Responsive wrapping on narrow viewports: full width input on line 1, buttons side-by-side on line 2
+        ImGui::SetNextItemWidth(availW);
+        ImGui::InputText(inputId, buffer, bufferSize, extraFlags);
+        ImGui::Dummy(ImVec2(0, 4.0f));
+
+        float subBtnW = (availW - spacing) * 0.5f;
+        if (subBtnW < 100.0f) subBtnW = 100.0f;
+        if (renderSecondaryButton(btn1Label, ImVec2(subBtnW, 34.0f))) {
+            if (btn1Clicked) *btn1Clicked = true;
+        }
+        ImGui::SameLine(0.0f, spacing);
+        if (renderSecondaryButton(btn2Label, ImVec2(subBtnW, 34.0f))) {
+            if (btn2Clicked) *btn2Clicked = true;
+        }
+    } else {
+        ImGui::SetNextItemWidth(inputW);
+        ImGui::InputText(inputId, buffer, bufferSize, extraFlags);
+        ImGui::SameLine(0.0f, spacing);
+        if (renderSecondaryButton(btn1Label, ImVec2(btn1W, 34.0f))) {
+            if (btn1Clicked) *btn1Clicked = true;
+        }
+        ImGui::SameLine(0.0f, spacing);
+        if (renderSecondaryButton(btn2Label, ImVec2(btn2W, 34.0f))) {
+            if (btn2Clicked) *btn2Clicked = true;
+        }
+    }
+}
+
+void UITheme::renderResponsiveButtonPair(const char* btn1Label, bool (*btn1Func)(const char*, const ImVec2&),
+                                         float btn1W, bool* btn1Clicked,
+                                         const char* btn2Label, bool (*btn2Func)(const char*, const ImVec2&),
+                                         float btn2W, bool* btn2Clicked,
+                                         float minAvailW, float btnH) {
+    if (btn1Clicked) *btn1Clicked = false;
+    if (btn2Clicked) *btn2Clicked = false;
+
+    float availW = ImGui::GetContentRegionAvail().x;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+
+    if (availW < minAvailW || (btn1W + btn2W + spacing > availW)) {
+        // Stacked responsive layout
+        if (btn1Func(btn1Label, ImVec2(-1, btnH))) {
+            if (btn1Clicked) *btn1Clicked = true;
+        }
+        ImGui::Dummy(ImVec2(0, 4.0f));
+        if (btn2Func(btn2Label, ImVec2(-1, btnH))) {
+            if (btn2Clicked) *btn2Clicked = true;
+        }
+    } else {
+        // Inline side-by-side layout
+        if (btn1Func(btn1Label, ImVec2(btn1W, btnH))) {
+            if (btn1Clicked) *btn1Clicked = true;
+        }
+        ImGui::SameLine(0.0f, spacing);
+        if (btn2Func(btn2Label, ImVec2(btn2W, btnH))) {
+            if (btn2Clicked) *btn2Clicked = true;
+        }
+    }
 }
 
 } // namespace forensivault::gui

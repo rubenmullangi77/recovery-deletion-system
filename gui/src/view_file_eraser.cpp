@@ -71,21 +71,20 @@ void ViewFileEraser::render() {
 void ViewFileEraser::renderTargetSelection() {
     if (UITheme::beginCard("FileTargetCard", "Target File or Directory Selection", "TARGET PATH", UITheme::COLOR_ORANGE)) {
         ImGui::Text("Specify an individual file or directory tree for cryptographic sanitization:");
-        ImGui::PushItemWidth(-260);
-        bool textChanged = ImGui::InputText("##TargetPath", targetPathBuffer_, sizeof(targetPathBuffer_));
-        ImGui::PopItemWidth();
+        bool browseFileClicked = false, browseDirClicked = false;
+        UITheme::renderInputWithTwoButtons("##TargetPath", targetPathBuffer_, sizeof(targetPathBuffer_),
+                                           "Browse File...", 130.0f, &browseFileClicked,
+                                           "Browse Folder...", 130.0f, &browseDirClicked);
 
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse File...", ImVec2(120, 32))) {
+        bool textChanged = false;
+        if (browseFileClicked) {
             std::string selected = FileDialog::openFile("Select File to Sanitize");
             if (!selected.empty()) {
                 std::strncpy(targetPathBuffer_, selected.c_str(), sizeof(targetPathBuffer_) - 1);
                 textChanged = true;
             }
         }
-
-        ImGui::SameLine();
-        if (UITheme::renderSecondaryButton("Browse Folder...", ImVec2(120, 32))) {
+        if (browseDirClicked) {
             std::string selected = FileDialog::openFolder("Select Directory to Sanitize");
             if (!selected.empty()) {
                 std::strncpy(targetPathBuffer_, selected.c_str(), sizeof(targetPathBuffer_) - 1);
@@ -322,19 +321,20 @@ void ViewFileEraser::renderConfirmationModal() {
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(540, 310));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(480, 240), ImVec2(720, 800));
 
-    if (ImGui::BeginPopupModal("Permanent Data Eradication Warning", &showConfirmModal_, ImGuiWindowFlags_NoResize)) {
+    if (ImGui::BeginPopupModal("Permanent Data Eradication Warning", &showConfirmModal_, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::TextColored(UITheme::COLOR_RED, "CRITICAL WARNING: IRREVERSIBLE FILE SANITIZATION");
         ImGui::Separator();
         ImGui::Spacing();
-        ImGui::TextWrapped("The selected data will be overwritten with certified multi-pass patterns and renamed with 3 passes of randomized tokens before deletion. "
-                           "Recovery by forensic software or laboratory physical carving will be mathematically impossible.");
+        UITheme::renderWrappedText("The selected data will be overwritten with certified multi-pass patterns and renamed with 3 passes of randomized tokens before deletion. "
+                           "Recovery by forensic software or laboratory physical carving will be mathematically impossible.", UITheme::COLOR_TEXT_SECONDARY);
         ImGui::Spacing();
-        ImGui::Text("Target: %s", targetPathBuffer_);
+        UITheme::renderWrappedFormatted(UITheme::COLOR_TEXT_PRIMARY, "Target: %s", targetPathBuffer_);
         ImGui::Spacing();
-        ImGui::Text("Type 'DESTROY' in uppercase to authorize permanent erasure:");
+        ImGui::TextColored(UITheme::COLOR_TEXT_PRIMARY, "Type 'DESTROY' in uppercase to authorize permanent erasure:");
 
+        ImGui::SetNextItemWidth(-1);
         ImGui::InputText("##DestroyConfirm", confirmInputBuffer_, sizeof(confirmInputBuffer_));
 
         bool matches = (std::strcmp(confirmInputBuffer_, "DESTROY") == 0);

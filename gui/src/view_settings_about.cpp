@@ -128,12 +128,21 @@ void ViewSettingsAbout::renderCryptoBenchmark() {
         ImGui::SameLine();
         ImGui::RadioButton("128 MB", &testSizeMb_, 128);
 
-        ImGui::SameLine(ImGui::GetWindowWidth() - 250.0f);
+        float availW = ImGui::GetContentRegionAvail().x;
+        float btnW = 230.0f;
+        float targetX = ImGui::GetWindowWidth() - btnW - 24.0f;
+
+        if (targetX > ImGui::GetCursorPosX() + 16.0f) {
+            ImGui::SameLine(targetX);
+        } else {
+            ImGui::Dummy(ImVec2(0, 4.0f));
+        }
 
         bool canRun = !benchRunner_.isRunning();
         if (!canRun) ImGui::BeginDisabled();
 
-        if (UITheme::renderSecondaryButton("Run Hashing Benchmark", ImVec2(230, 32))) {
+        float finalBtnW = (availW < 300.0f) ? -1.0f : btnW;
+        if (UITheme::renderSecondaryButton("Run Hashing Benchmark", ImVec2(finalBtnW, 34))) {
             hasBenchResult_ = false;
             int sizeMb = testSizeMb_;
             benchRunner_.run([this, sizeMb]() {

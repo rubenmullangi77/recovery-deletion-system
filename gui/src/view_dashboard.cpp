@@ -24,30 +24,50 @@ void ViewDashboard::renderMetricsOverview() {
 
     float totalW = ImGui::GetContentRegionAvail().x;
     float itemSpacing = ImGui::GetStyle().ItemSpacing.x;
-    float cardW = (totalW - 3.0f * itemSpacing) / 4.0f;
-    if (cardW < 180.0f) cardW = 180.0f;
 
-    // Card 1: Platform & Privileges
-    const char* privLabel = ctx.isElevated ? "Admin / Elevated" : "Standard User";
-    ImVec4 privCol = ctx.isElevated ? UITheme::COLOR_GREEN : UITheme::COLOR_YELLOW;
-    UITheme::renderMetricTile("Security Context", privLabel, ctx.platformName.c_str(), privCol, cardW);
+    if (totalW < 760.0f) {
+        // 2x2 grid for responsive narrow viewports
+        float cardW = (totalW - itemSpacing) * 0.5f;
 
-    ImGui::SameLine();
-    // Card 2: Recovered Artifacts (Preservation domain)
-    std::string recCount = std::to_string(ctx.recoveredFilesRegistry.size());
-    UITheme::renderMetricTile("Evidence Recovered", recCount.c_str(), "Read-Only Carved & Parsed", UITheme::COLOR_BLUE, cardW);
+        const char* privLabel = ctx.isElevated ? "Admin / Elevated" : "Standard User";
+        ImVec4 privCol = ctx.isElevated ? UITheme::COLOR_GREEN : UITheme::COLOR_YELLOW;
+        UITheme::renderMetricTile("Security Context", privLabel, ctx.platformName.c_str(), privCol, cardW);
 
-    ImGui::SameLine();
-    // Card 3: Sanitized Data (Destruction domain)
-    std::string eraseCount = std::to_string(ctx.totalFilesErased);
-    UITheme::renderMetricTile("Sanitized Artifacts", eraseCount.c_str(), "Certified NIST/DoD Eradicated", UITheme::COLOR_ORANGE, cardW);
+        ImGui::SameLine(0.0f, itemSpacing);
+        std::string recCount = std::to_string(ctx.recoveredFilesRegistry.size());
+        UITheme::renderMetricTile("Evidence Recovered", recCount.c_str(), "Read-Only Carved & Parsed", UITheme::COLOR_BLUE, cardW);
 
-    ImGui::SameLine();
-    // Card 4: Audit Chain
-    bool chainOk = forensivault::logging::AuditLogger::getInstance().verifyChain();
-    const char* chainText = chainOk ? "100% Intact" : "Tamper Detected";
-    ImVec4 chainCol = chainOk ? UITheme::COLOR_GREEN : UITheme::COLOR_RED;
-    UITheme::renderMetricTile("Audit Journal", chainText, "Chained SHA-256 Ledger", chainCol, cardW);
+        ImGui::Dummy(ImVec2(0, 4.0f));
+
+        std::string eraseCount = std::to_string(ctx.totalFilesErased);
+        UITheme::renderMetricTile("Sanitized Artifacts", eraseCount.c_str(), "Certified NIST/DoD Eradicated", UITheme::COLOR_ORANGE, cardW);
+
+        ImGui::SameLine(0.0f, itemSpacing);
+        bool chainOk = forensivault::logging::AuditLogger::getInstance().verifyChain();
+        const char* chainText = chainOk ? "100% Intact" : "Tamper Detected";
+        ImVec4 chainCol = chainOk ? UITheme::COLOR_GREEN : UITheme::COLOR_RED;
+        UITheme::renderMetricTile("Audit Journal", chainText, "Chained SHA-256 Ledger", chainCol, cardW);
+    } else {
+        float cardW = (totalW - 3.0f * itemSpacing) / 4.0f;
+
+        const char* privLabel = ctx.isElevated ? "Admin / Elevated" : "Standard User";
+        ImVec4 privCol = ctx.isElevated ? UITheme::COLOR_GREEN : UITheme::COLOR_YELLOW;
+        UITheme::renderMetricTile("Security Context", privLabel, ctx.platformName.c_str(), privCol, cardW);
+
+        ImGui::SameLine(0.0f, itemSpacing);
+        std::string recCount = std::to_string(ctx.recoveredFilesRegistry.size());
+        UITheme::renderMetricTile("Evidence Recovered", recCount.c_str(), "Read-Only Carved & Parsed", UITheme::COLOR_BLUE, cardW);
+
+        ImGui::SameLine(0.0f, itemSpacing);
+        std::string eraseCount = std::to_string(ctx.totalFilesErased);
+        UITheme::renderMetricTile("Sanitized Artifacts", eraseCount.c_str(), "Certified NIST/DoD Eradicated", UITheme::COLOR_ORANGE, cardW);
+
+        ImGui::SameLine(0.0f, itemSpacing);
+        bool chainOk = forensivault::logging::AuditLogger::getInstance().verifyChain();
+        const char* chainText = chainOk ? "100% Intact" : "Tamper Detected";
+        ImVec4 chainCol = chainOk ? UITheme::COLOR_GREEN : UITheme::COLOR_RED;
+        UITheme::renderMetricTile("Audit Journal", chainText, "Chained SHA-256 Ledger", chainCol, cardW);
+    }
 
     ImGui::Spacing();
 }
@@ -56,15 +76,16 @@ void ViewDashboard::renderQuickLaunchModules() {
     auto& ctx = AppContext::getInstance();
 
     float availW = ImGui::GetContentRegionAvail().x;
-    float colW = (availW - 16.0f) * 0.5f;
-    if (colW < 320.0f) colW = availW;
+    bool useColumns = (availW >= 680.0f);
 
     // =========================================================================
     // DUAL-DOMAIN SECTION: CLEAR SEPARATION OF RECOVERY VS DESTRUCTION
     // =========================================================================
 
-    ImGui::Columns(2, "DualDomainColumns", false);
-    ImGui::SetColumnWidth(0, colW + 8.0f);
+    if (useColumns) {
+        ImGui::Columns(2, "DualDomainColumns", false);
+        ImGui::SetColumnWidth(0, availW * 0.5f);
+    }
 
     // -------------------------------------------------------------------------
     // DOMAIN 1: FORENSIC DATA RECOVERY (EVIDENCE PRESERVATION)
@@ -108,7 +129,11 @@ void ViewDashboard::renderQuickLaunchModules() {
     }
     UITheme::endCard();
 
-    ImGui::NextColumn();
+    if (useColumns) {
+        ImGui::NextColumn();
+    } else {
+        ImGui::Dummy(ImVec2(0, 10.0f));
+    }
 
     // -------------------------------------------------------------------------
     // DOMAIN 2: SECURE DATA SANITIZATION (DATA ERADICATION)
@@ -152,7 +177,9 @@ void ViewDashboard::renderQuickLaunchModules() {
     }
     UITheme::endCard();
 
-    ImGui::Columns(1);
+    if (useColumns) {
+        ImGui::Columns(1);
+    }
     ImGui::Dummy(ImVec2(0, 8.0f));
 }
 

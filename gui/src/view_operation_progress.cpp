@@ -70,20 +70,44 @@ void ViewOperationProgress::renderActiveOperation() {
 
         // Action shortcuts
         if (!op.isRunning) {
+            float availW = ImGui::GetContentRegionAvail().x;
+            float spacing = ImGui::GetStyle().ItemSpacing.x;
+
             if (op.moduleName.find("Carver") != std::string::npos || op.moduleName.find("Recovery") != std::string::npos) {
-                if (UITheme::renderPrimaryButton("View Recovered Files Registry ->", ImVec2(260, 34))) {
-                    ctx.activeTab = ModuleTab::RECOVERED_FILES;
+                if (availW < 620.0f) {
+                    if (UITheme::renderPrimaryButton("View Recovered Files Registry ->", ImVec2(-1, 34))) {
+                        ctx.activeTab = ModuleTab::RECOVERED_FILES;
+                    }
+                    ImGui::Dummy(ImVec2(0, 4.0f));
+                    float halfW = (availW - spacing) * 0.5f;
+                    if (UITheme::renderSecondaryButton("View Audit Journal ->", ImVec2(halfW, 34))) {
+                        ctx.activeTab = ModuleTab::AUDIT_LOG;
+                    }
+                    ImGui::SameLine(0.0f, spacing);
+                    if (UITheme::renderGhostButton("Clear Monitor", ImVec2(halfW, 34))) {
+                        op.hasFinished = false;
+                    }
+                } else {
+                    if (UITheme::renderPrimaryButton("View Recovered Files Registry ->", ImVec2(260, 34))) {
+                        ctx.activeTab = ModuleTab::RECOVERED_FILES;
+                    }
+                    ImGui::SameLine(0.0f, spacing);
+                    if (UITheme::renderSecondaryButton("View Audit Journal ->", ImVec2(200, 34))) {
+                        ctx.activeTab = ModuleTab::AUDIT_LOG;
+                    }
+                    ImGui::SameLine(0.0f, spacing);
+                    if (UITheme::renderGhostButton("Clear Monitor", ImVec2(120, 34))) {
+                        op.hasFinished = false;
+                    }
                 }
-                ImGui::SameLine();
-            }
-
-            if (UITheme::renderSecondaryButton("View Audit Journal ->", ImVec2(200, 34))) {
-                ctx.activeTab = ModuleTab::AUDIT_LOG;
-            }
-
-            ImGui::SameLine();
-            if (UITheme::renderGhostButton("Clear Monitor", ImVec2(120, 34))) {
-                op.hasFinished = false;
+            } else {
+                if (UITheme::renderSecondaryButton("View Audit Journal ->", ImVec2(200, 34))) {
+                    ctx.activeTab = ModuleTab::AUDIT_LOG;
+                }
+                ImGui::SameLine(0.0f, spacing);
+                if (UITheme::renderGhostButton("Clear Monitor", ImVec2(120, 34))) {
+                    op.hasFinished = false;
+                }
             }
         }
     }

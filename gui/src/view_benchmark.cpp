@@ -29,7 +29,9 @@ void ViewBenchmark::render() {
     bool canRun = !benchRunner_.isRunning();
     if (!canRun) ImGui::BeginDisabled();
 
-    if (UITheme::renderPrimaryButton("Run Cryptographic Integrity Benchmark", ImVec2(340, 38))) {
+    float benchAvailW = ImGui::GetContentRegionAvail().x;
+    float benchBtnW = (benchAvailW < 360.0f) ? -1.0f : 340.0f;
+    if (UITheme::renderPrimaryButton("Run Cryptographic Integrity Benchmark", ImVec2(benchBtnW, 38))) {
         hasResult_.store(false);
         std::string payload = payloadBuffer_;
 
